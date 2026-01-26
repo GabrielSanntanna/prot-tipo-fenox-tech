@@ -20,6 +20,9 @@ import Ferias from "./pages/rh/Ferias";
 import SolicitarFerias from "./pages/rh/SolicitarFerias";
 import DetalhesFerias from "./pages/rh/DetalhesFerias";
 
+// RH Module - Ponto
+import Ponto from "./pages/rh/Ponto";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -98,6 +101,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <DetalhesFerias />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rh/ponto"
+              element={
+                <ProtectedRoute>
+                  <Ponto />
                 </ProtectedRoute>
               }
             />
