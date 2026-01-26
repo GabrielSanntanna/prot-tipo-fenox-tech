@@ -110,8 +110,9 @@ export default function HistoricoPonto({ employeeId }: HistoricoPontoProps) {
         ) : (
           <div className="space-y-4">
             {sortedDates.map((date) => {
-              const dayRecords = recordsByDate![date];
-              const workedHours = calculateWorkedHours(dayRecords);
+              const dayRecords = recordsByDate![date]!;
+              const recordsForCalc = dayRecords.map(({ employee, ...rest }) => rest);
+              const workedHours = calculateWorkedHours(recordsForCalc);
               const dateObj = new Date(date + 'T12:00:00');
 
               return (

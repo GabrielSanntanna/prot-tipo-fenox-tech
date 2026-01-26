@@ -53,6 +53,8 @@ export type Database = {
           manager_id: string | null
           notes: string | null
           phone: string | null
+          photo_url: string | null
+          pin: string | null
           position_id: string | null
           salary: number | null
           status: Database["public"]["Enums"]["employee_status"]
@@ -74,6 +76,8 @@ export type Database = {
           manager_id?: string | null
           notes?: string | null
           phone?: string | null
+          photo_url?: string | null
+          pin?: string | null
           position_id?: string | null
           salary?: number | null
           status?: Database["public"]["Enums"]["employee_status"]
@@ -95,6 +99,8 @@ export type Database = {
           manager_id?: string | null
           notes?: string | null
           phone?: string | null
+          photo_url?: string | null
+          pin?: string | null
           position_id?: string | null
           salary?: number | null
           status?: Database["public"]["Enums"]["employee_status"]
@@ -195,6 +201,7 @@ export type Database = {
           id: string
           location: string | null
           notes: string | null
+          photo_url: string | null
           record_date: string
           record_time: string
           recorded_by: string
@@ -206,6 +213,7 @@ export type Database = {
           id?: string
           location?: string | null
           notes?: string | null
+          photo_url?: string | null
           record_date?: string
           record_time?: string
           recorded_by: string
@@ -217,6 +225,7 @@ export type Database = {
           id?: string
           location?: string | null
           notes?: string | null
+          photo_url?: string | null
           record_date?: string
           record_time?: string
           recorded_by?: string

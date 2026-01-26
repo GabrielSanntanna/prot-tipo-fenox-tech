@@ -1,1 +1,4 @@
 project_id = "heynxljdvdktgsmlimkd"
+
+[functions.tablet-time-clock]
+verify_jwt = false
