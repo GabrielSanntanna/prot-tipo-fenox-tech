@@ -9,11 +9,16 @@ import Login from "./pages/auth/Login";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 
-// RH Module
+// RH Module - Colaboradores
 import Colaboradores from "./pages/rh/Colaboradores";
 import NovoColaborador from "./pages/rh/NovoColaborador";
 import EditarColaborador from "./pages/rh/EditarColaborador";
 import PerfilColaborador from "./pages/rh/PerfilColaborador";
+
+// RH Module - Férias
+import Ferias from "./pages/rh/Ferias";
+import SolicitarFerias from "./pages/rh/SolicitarFerias";
+import DetalhesFerias from "./pages/rh/DetalhesFerias";
 
 const queryClient = new QueryClient();
 
@@ -69,6 +74,30 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <EditarColaborador />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rh/ferias"
+              element={
+                <ProtectedRoute>
+                  <Ferias />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rh/ferias/solicitar"
+              element={
+                <ProtectedRoute>
+                  <SolicitarFerias />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rh/ferias/:id"
+              element={
+                <ProtectedRoute>
+                  <DetalhesFerias />
                 </ProtectedRoute>
               }
             />
