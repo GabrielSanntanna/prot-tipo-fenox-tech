@@ -42,7 +42,7 @@ export function useTimeRecords(filters?: TimeRecordFilters) {
       const { data, error } = await query;
 
       if (error) throw error;
-      return data as (TimeRecord & {
+      return data as (Omit<TimeRecord, 'employee'> & {
         employee: {
           id: string;
           first_name: string;

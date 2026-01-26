@@ -23,6 +23,9 @@ import DetalhesFerias from "./pages/rh/DetalhesFerias";
 // RH Module - Ponto
 import Ponto from "./pages/rh/Ponto";
 
+// Tablet Module
+import PontoTablet from "./pages/tablet/PontoTablet";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -112,6 +115,10 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            
+            {/* Tablet Time Clock - No auth required for terminal access */}
+            <Route path="/tablet/ponto" element={<PontoTablet />} />
+            
             <Route
               path="/rh/*"
               element={
