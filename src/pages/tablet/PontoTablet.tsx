@@ -294,7 +294,7 @@ export default function PontoTablet() {
               <CardTitle className="text-2xl">Digite seu PIN</CardTitle>
             </CardHeader>
             <CardContent className="space-y-8">
-              <PinInput value={pin} maxLength={6} className="py-4" />
+              <PinInput value={pin} maxLength={4} className="py-4" />
 
               {isLoading ? (
                 <div className="flex justify-center py-8">
