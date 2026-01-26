@@ -1,22 +1,37 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Building2, Loader2 } from 'lucide-react';
+import { Building2, Loader2, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { signIn } = useAuth();
+  const { signIn, isConfigured, user, loading } = useAuth();
   const { toast } = useToast();
+
+  // If already logged in, redirect to dashboard
+  if (!loading && user) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!isConfigured) {
+      toast({
+        variant: 'destructive',
+        title: 'Supabase não configurado',
+        description: 'Por favor, configure as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY'
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     const { error } = await signIn(email, password);
@@ -45,6 +60,21 @@ export default function Login() {
           <h1 className="text-3xl font-bold tracking-tight text-foreground">SGE</h1>
           <p className="text-sm text-muted-foreground">Sistema de Gerenciamento Empresarial</p>
         </div>
+
+        {/* Configuration warning */}
+        {!isConfigured && (
+          <Card className="border-warning bg-warning/10">
+            <CardContent className="flex items-start gap-3 p-4">
+              <AlertCircle className="h-5 w-5 text-warning mt-0.5" />
+              <div className="text-sm">
+                <p className="font-medium text-warning">Supabase não configurado</p>
+                <p className="text-muted-foreground mt-1">
+                  Aguardando as variáveis de ambiente serem carregadas. Tente recarregar a página.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Login Card */}
         <Card className="border-border shadow-lg">
@@ -82,7 +112,7 @@ export default function Login() {
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-4">
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || !isConfigured}>
                 {isLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
