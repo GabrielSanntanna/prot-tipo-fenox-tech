@@ -42,7 +42,12 @@ export function useEmployees(filters: EmployeeFilters = {}) {
       const { data, error } = await query;
 
       if (error) throw error;
-      return data as Employee[];
+      
+      // Transform manager array to single object (Supabase returns array for self-joins)
+      return (data || []).map(emp => ({
+        ...emp,
+        manager: Array.isArray(emp.manager) ? emp.manager[0] || null : emp.manager
+      })) as Employee[];
     },
     enabled: isSupabaseConfigured,
   });
@@ -68,7 +73,14 @@ export function useEmployee(id: string | undefined) {
         .maybeSingle();
 
       if (error) throw error;
-      return data as Employee | null;
+      
+      if (!data) return null;
+      
+      // Transform manager array to single object
+      return {
+        ...data,
+        manager: Array.isArray(data.manager) ? data.manager[0] || null : data.manager
+      } as Employee;
     },
     enabled: isSupabaseConfigured && !!id,
   });

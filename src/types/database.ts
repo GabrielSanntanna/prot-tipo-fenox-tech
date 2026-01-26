@@ -61,7 +61,7 @@ export interface Employee {
   // Joined fields
   department?: Department;
   position?: Position;
-  manager?: Employee;
+  manager?: { id: string; first_name: string; last_name: string } | null;
 }
 
 export interface Vacation {
