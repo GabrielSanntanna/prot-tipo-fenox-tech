@@ -9,6 +9,12 @@ import Login from "./pages/auth/Login";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 
+// RH Module
+import Colaboradores from "./pages/rh/Colaboradores";
+import NovoColaborador from "./pages/rh/NovoColaborador";
+import EditarColaborador from "./pages/rh/EditarColaborador";
+import PerfilColaborador from "./pages/rh/PerfilColaborador";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -34,6 +40,38 @@ const App = () => (
             />
             
             {/* Placeholder routes for future modules */}
+            <Route
+              path="/rh/colaboradores"
+              element={
+                <ProtectedRoute>
+                  <Colaboradores />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rh/colaboradores/novo"
+              element={
+                <ProtectedRoute>
+                  <NovoColaborador />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rh/colaboradores/:id"
+              element={
+                <ProtectedRoute>
+                  <PerfilColaborador />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/rh/colaboradores/:id/editar"
+              element={
+                <ProtectedRoute>
+                  <EditarColaborador />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/rh/*"
               element={
