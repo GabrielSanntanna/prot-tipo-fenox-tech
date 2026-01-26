@@ -10,6 +10,7 @@ interface ConfirmacaoDadosProps {
   onConfirm: () => void;
   onCancel: () => void;
   isLoading?: boolean;
+  confirmDisabled?: boolean;
 }
 
 export default function ConfirmacaoDados({
@@ -19,6 +20,7 @@ export default function ConfirmacaoDados({
   onConfirm,
   onCancel,
   isLoading = false,
+  confirmDisabled = false,
 }: ConfirmacaoDadosProps) {
   const initials = nome
     .split(' ')
@@ -59,7 +61,7 @@ export default function ConfirmacaoDados({
             size="lg"
             className="flex-1 h-14 text-lg"
             onClick={onConfirm}
-            disabled={isLoading}
+            disabled={isLoading || confirmDisabled}
           >
             <CheckCircle2 className="mr-2 h-5 w-5" />
             Sim, sou eu

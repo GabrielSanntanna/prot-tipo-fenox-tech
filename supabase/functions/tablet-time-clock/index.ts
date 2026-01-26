@@ -5,6 +5,90 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Haversine formula to calculate distance between two points
+function calculateDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // Distance in meters
+}
+
+interface AllowedLocation {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radius_meters: number;
+}
+
+interface LocationValidationResult {
+  is_valid: boolean;
+  location_name: string | null;
+  distance: number | null;
+  has_configured_locations: boolean;
+}
+
+function validateLocation(
+  userLat: number,
+  userLon: number,
+  allowedLocations: AllowedLocation[]
+): LocationValidationResult {
+  if (allowedLocations.length === 0) {
+    return {
+      is_valid: true,
+      location_name: null,
+      distance: null,
+      has_configured_locations: false,
+    };
+  }
+
+  let closestLocation: AllowedLocation | null = null;
+  let closestDistance = Infinity;
+
+  for (const location of allowedLocations) {
+    const distance = calculateDistance(
+      userLat,
+      userLon,
+      Number(location.latitude),
+      Number(location.longitude)
+    );
+
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestLocation = location;
+    }
+
+    if (distance <= location.radius_meters) {
+      return {
+        is_valid: true,
+        location_name: location.name,
+        distance: Math.round(distance),
+        has_configured_locations: true,
+      };
+    }
+  }
+
+  return {
+    is_valid: false,
+    location_name: closestLocation?.name || null,
+    distance: Math.round(closestDistance),
+    has_configured_locations: true,
+  };
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -19,6 +103,59 @@ Deno.serve(async (req) => {
 
     const url = new URL(req.url);
     const action = url.pathname.split('/').pop();
+
+    // Endpoint to get allowed locations for validation
+    if (req.method === 'GET' && action === 'locations') {
+      const { data: locations, error } = await supabase
+        .from('allowed_locations')
+        .select('id, name, latitude, longitude, radius_meters')
+        .eq('is_active', true);
+
+      if (error) {
+        console.error('Error fetching locations:', error);
+        return new Response(
+          JSON.stringify({ error: 'Erro ao buscar locais permitidos' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ locations: locations || [] }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Endpoint to validate location
+    if (req.method === 'POST' && action === 'validate-location') {
+      const { latitude, longitude } = await req.json();
+
+      if (latitude == null || longitude == null) {
+        return new Response(
+          JSON.stringify({ error: 'Coordenadas inválidas' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const { data: locations, error } = await supabase
+        .from('allowed_locations')
+        .select('id, name, latitude, longitude, radius_meters')
+        .eq('is_active', true);
+
+      if (error) {
+        console.error('Error fetching locations:', error);
+        return new Response(
+          JSON.stringify({ error: 'Erro ao validar localização' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const result = validateLocation(latitude, longitude, locations || []);
+
+      return new Response(
+        JSON.stringify(result),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (req.method === 'POST' && action === 'verify-pin') {
       const { pin } = await req.json();
@@ -64,7 +201,7 @@ Deno.serve(async (req) => {
     }
 
     if (req.method === 'POST' && action === 'register') {
-      const { employee_id, photo_url, record_type } = await req.json();
+      const { employee_id, photo_url, record_type, latitude, longitude, location_name, location_valid } = await req.json();
 
       if (!employee_id) {
         return new Response(
@@ -103,6 +240,19 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Build location string with coordinates and validation status
+      let locationString: string | null = null;
+      if (latitude != null && longitude != null) {
+        const parts = [`${latitude},${longitude}`];
+        if (location_name) {
+          parts.push(location_name);
+        }
+        if (location_valid !== undefined) {
+          parts.push(location_valid ? 'válido' : 'inválido');
+        }
+        locationString = parts.join(' | ');
+      }
+
       // Insert time record
       const { data: timeRecord, error: insertError } = await supabase
         .from('time_records')
@@ -113,6 +263,7 @@ Deno.serve(async (req) => {
           record_time: now.toISOString(),
           type,
           photo_url,
+          location: locationString,
         })
         .select()
         .single();
@@ -139,6 +290,8 @@ Deno.serve(async (req) => {
           record: timeRecord,
           type,
           time: now.toISOString(),
+          location_valid: location_valid ?? true,
+          location_name,
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );

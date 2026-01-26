@@ -8,18 +8,28 @@ import PinInput from '@/components/tablet/PinInput';
 import ConfirmacaoDados from '@/components/tablet/ConfirmacaoDados';
 import CapturaFoto from '@/components/tablet/CapturaFoto';
 import MensagemFeedback from '@/components/tablet/MensagemFeedback';
-import { supabase } from '@/integrations/supabase/client';
+import LocationStatus from '@/components/tablet/LocationStatus';
+import { useGeolocation } from '@/hooks/useGeolocation';
 import { useToast } from '@/hooks/use-toast';
 
 const EDGE_FUNCTION_URL = 'https://heynxljdvdktgsmlimkd.supabase.co/functions/v1/tablet-time-clock';
 
 type Step = 'pin' | 'confirm' | 'photo' | 'success' | 'error';
+type LocationValidationStatus = 'idle' | 'loading' | 'valid' | 'invalid' | 'error' | 'no-locations';
 
 interface EmployeeData {
   id: string;
   nome: string;
   departamento?: string;
   fotoUrl?: string | null;
+}
+
+interface LocationValidation {
+  status: LocationValidationStatus;
+  locationName?: string;
+  distance?: number;
+  errorMessage?: string;
+  coordinates?: { latitude: number; longitude: number };
 }
 
 export default function PontoTablet() {
@@ -29,7 +39,11 @@ export default function PontoTablet() {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [registeredTime, setRegisteredTime] = useState('');
+  const [locationValidation, setLocationValidation] = useState<LocationValidation>({
+    status: 'idle',
+  });
   const { toast } = useToast();
+  const geolocation = useGeolocation({ timeout: 15000 });
 
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -39,12 +53,77 @@ export default function PontoTablet() {
     return () => clearInterval(interval);
   }, []);
 
+  // Validate location when step changes to confirm
+  useEffect(() => {
+    if (step === 'confirm' && locationValidation.status === 'idle') {
+      validateLocation();
+    }
+  }, [step]);
+
+  const validateLocation = useCallback(async () => {
+    if (!geolocation.isSupported) {
+      setLocationValidation({
+        status: 'error',
+        errorMessage: 'Geolocalização não suportada neste dispositivo',
+      });
+      return;
+    }
+
+    setLocationValidation({ status: 'loading' });
+
+    try {
+      const position = await geolocation.getCurrentPosition();
+      const { latitude, longitude } = position.coords;
+
+      // Validate against allowed locations via edge function
+      const response = await fetch(`${EDGE_FUNCTION_URL}/validate-location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latitude, longitude }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao validar localização');
+      }
+
+      if (!data.has_configured_locations) {
+        setLocationValidation({
+          status: 'no-locations',
+          coordinates: { latitude, longitude },
+        });
+      } else if (data.is_valid) {
+        setLocationValidation({
+          status: 'valid',
+          locationName: data.location_name,
+          distance: data.distance,
+          coordinates: { latitude, longitude },
+        });
+      } else {
+        setLocationValidation({
+          status: 'invalid',
+          locationName: data.location_name,
+          distance: data.distance,
+          coordinates: { latitude, longitude },
+        });
+      }
+    } catch (err) {
+      console.error('Location validation error:', err);
+      setLocationValidation({
+        status: 'error',
+        errorMessage: err instanceof Error ? err.message : 'Erro ao obter localização',
+      });
+    }
+  }, [geolocation]);
+
   const resetFlow = useCallback(() => {
     setStep('pin');
     setPin('');
     setEmployee(null);
     setErrorMessage('');
     setRegisteredTime('');
+    setLocationValidation({ status: 'idle' });
   }, []);
 
   const handleKeyPress = useCallback((key: string) => {
@@ -102,8 +181,17 @@ export default function PontoTablet() {
   }, [pin, toast]);
 
   const handleConfirmIdentity = useCallback(() => {
+    // Check if location is invalid and block if required
+    if (locationValidation.status === 'invalid') {
+      toast({
+        title: 'Localização inválida',
+        description: 'Você precisa estar em um local permitido para registrar o ponto.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setStep('photo');
-  }, []);
+  }, [locationValidation.status, toast]);
 
   const handleCancelIdentity = useCallback(() => {
     resetFlow();
@@ -119,6 +207,7 @@ export default function PontoTablet() {
       let photoUrl: string | undefined;
       
       try {
+        const { supabase } = await import('@/integrations/supabase/client');
         const fileName = `${employee.id}/${Date.now()}.jpg`;
         const base64Data = photoDataUrl.split(',')[1];
         const byteCharacters = atob(base64Data);
@@ -146,13 +235,17 @@ export default function PontoTablet() {
         console.warn('Photo upload failed, proceeding without photo:', uploadErr);
       }
 
-      // Use edge function for time record registration
+      // Use edge function for time record registration with location data
       const response = await fetch(`${EDGE_FUNCTION_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           employee_id: employee.id,
           photo_url: photoUrl,
+          latitude: locationValidation.coordinates?.latitude,
+          longitude: locationValidation.coordinates?.longitude,
+          location_name: locationValidation.locationName,
+          location_valid: locationValidation.status === 'valid' || locationValidation.status === 'no-locations',
         }),
       });
 
@@ -171,7 +264,7 @@ export default function PontoTablet() {
     } finally {
       setIsLoading(false);
     }
-  }, [employee]);
+  }, [employee, locationValidation]);
 
   const handleCancelPhoto = useCallback(() => {
     setStep('confirm');
@@ -218,14 +311,23 @@ export default function PontoTablet() {
         )}
 
         {step === 'confirm' && employee && (
-          <ConfirmacaoDados
-            nome={employee.nome}
-            departamento={employee.departamento}
-            fotoUrl={employee.fotoUrl}
-            onConfirm={handleConfirmIdentity}
-            onCancel={handleCancelIdentity}
-            isLoading={isLoading}
-          />
+          <div className="w-full max-w-md space-y-4">
+            <ConfirmacaoDados
+              nome={employee.nome}
+              departamento={employee.departamento}
+              fotoUrl={employee.fotoUrl}
+              onConfirm={handleConfirmIdentity}
+              onCancel={handleCancelIdentity}
+              isLoading={isLoading}
+              confirmDisabled={locationValidation.status === 'loading'}
+            />
+            <LocationStatus
+              status={locationValidation.status}
+              locationName={locationValidation.locationName}
+              distance={locationValidation.distance}
+              errorMessage={locationValidation.errorMessage}
+            />
+          </div>
         )}
 
         {step === 'photo' && (
@@ -240,7 +342,9 @@ export default function PontoTablet() {
           <MensagemFeedback
             tipo="sucesso"
             titulo="Ponto Registrado!"
-            mensagem={`${employee?.nome}, seu ponto foi registrado com sucesso.`}
+            mensagem={`${employee?.nome}, seu ponto foi registrado com sucesso.${
+              locationValidation.locationName ? ` Local: ${locationValidation.locationName}` : ''
+            }`}
             horario={registeredTime}
             onClose={resetFlow}
           />
