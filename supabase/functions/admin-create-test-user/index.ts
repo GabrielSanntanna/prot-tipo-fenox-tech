@@ -19,17 +19,41 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     });
 
-    // Test user credentials
-    const testEmail = "gabriel.teste@gmail.com";
-    const testPassword = "Fenox@2026";
-    const testCpf = "12345678909";
+    // Parse request body for custom user data
+    let customData: {
+      email?: string;
+      password?: string;
+      cpf?: string;
+      first_name?: string;
+      last_name?: string;
+      pin?: string;
+      role?: string;
+    } | null = null;
+
+    try {
+      const body = await req.text();
+      if (body) {
+        customData = JSON.parse(body);
+      }
+    } catch {
+      // No body or invalid JSON, use defaults
+    }
+
+    // Use custom data or defaults
+    const testEmail = customData?.email || "gabriel.teste@gmail.com";
+    const testPassword = customData?.password || "Fenox@2026";
+    const testCpf = customData?.cpf || "12345678909";
+    const firstName = customData?.first_name || "Gabriel";
+    const lastName = customData?.last_name || "Teste";
+    const pin = customData?.pin || "1234";
+    const role = customData?.role || "admin";
 
     // Create auth user
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: testEmail,
       password: testPassword,
       email_confirm: true,
-      user_metadata: { full_name: "Gabriel Teste" }
+      user_metadata: { full_name: `${firstName} ${lastName}` }
     });
 
     if (authError && !authError.message.includes("already been registered")) {
@@ -38,21 +62,29 @@ serve(async (req) => {
 
     const userId = authUser?.user?.id;
 
-    // Check if employee already exists
+    // Check if employee already exists with this email
     const { data: existingEmployee } = await supabaseAdmin
       .from("employees")
-      .select("id")
+      .select("id, user_id")
       .eq("email", testEmail)
       .maybeSingle();
 
-    if (!existingEmployee) {
+    if (existingEmployee && !existingEmployee.user_id && userId) {
+      // Link existing employee to new auth user
+      const { error: linkError } = await supabaseAdmin
+        .from("employees")
+        .update({ user_id: userId })
+        .eq("id", existingEmployee.id);
+
+      if (linkError) throw linkError;
+    } else if (!existingEmployee) {
       // Create employee record
       const { error: empError } = await supabaseAdmin
         .from("employees")
         .insert({
           user_id: userId,
-          first_name: "Gabriel",
-          last_name: "Teste",
+          first_name: firstName,
+          last_name: lastName,
           email: testEmail,
           phone: "11999999999",
           cpf_cnpj: testCpf,
@@ -61,7 +93,7 @@ serve(async (req) => {
           payment_type: "fixed",
           hire_date: new Date().toISOString().split("T")[0],
           status: "active",
-          pin: "1234",
+          pin: pin,
           lgpd_consent: true,
           lgpd_consent_at: new Date().toISOString(),
         });
@@ -69,11 +101,11 @@ serve(async (req) => {
       if (empError) throw empError;
     }
 
-    // Add admin role if user was created
+    // Add role if user was created
     if (userId) {
       await supabaseAdmin
         .from("user_roles")
-        .upsert({ user_id: userId, role: "admin" }, { onConflict: "user_id,role" });
+        .upsert({ user_id: userId, role: role }, { onConflict: "user_id,role" });
     }
 
     return new Response(
@@ -83,9 +115,10 @@ serve(async (req) => {
           cpf: testCpf,
           email: testEmail,
           password: testPassword,
-          pin: "1234"
+          pin: pin
         },
-        message: "Usuário de teste criado com sucesso!"
+        message: "Usuário criado/vinculado com sucesso!",
+        linked_existing: existingEmployee && !existingEmployee.user_id
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
