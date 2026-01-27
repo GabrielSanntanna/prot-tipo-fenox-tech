@@ -7,18 +7,24 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Building2, Loader2, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { formatCPF, cleanDocument, validateCPF } from '@/utils/cpfValidator';
 
 export default function Login() {
-  const [email, setEmail] = useState('');
+  const [cpf, setCpf] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { signIn, isConfigured, user, loading } = useAuth();
+  const { signInWithCPF, isConfigured, user, loading } = useAuth();
   const { toast } = useToast();
 
   // If already logged in, redirect to dashboard
   if (!loading && user) {
     return <Navigate to="/dashboard" replace />;
   }
+
+  const handleCPFChange = (value: string) => {
+    const formatted = formatCPF(value);
+    setCpf(formatted);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,22 +33,40 @@ export default function Login() {
       toast({
         variant: 'destructive',
         title: 'Supabase não configurado',
-        description: 'Por favor, configure as variáveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY'
+        description: 'Por favor, configure as variáveis de ambiente do Supabase'
+      });
+      return;
+    }
+
+    const cleanedCPF = cleanDocument(cpf);
+    
+    if (!validateCPF(cleanedCPF)) {
+      toast({
+        variant: 'destructive',
+        title: 'CPF inválido',
+        description: 'Por favor, digite um CPF válido'
       });
       return;
     }
 
     setIsLoading(true);
 
-    const { error } = await signIn(email, password);
+    const { error } = await signInWithCPF(cpf, password);
 
     if (error) {
+      let errorMessage = error.message;
+      
+      // Translate common errors
+      if (error.message === 'Invalid login credentials') {
+        errorMessage = 'CPF ou senha incorretos';
+      } else if (error.message.includes('Email not confirmed')) {
+        errorMessage = 'Email não confirmado. Verifique sua caixa de entrada.';
+      }
+      
       toast({
         variant: 'destructive',
         title: 'Erro ao entrar',
-        description: error.message === 'Invalid login credentials'
-          ? 'Email ou senha incorretos'
-          : error.message
+        description: errorMessage
       });
     }
 
@@ -57,8 +81,8 @@ export default function Login() {
           <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-primary">
             <Building2 className="h-10 w-10 text-primary-foreground" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">SGE</h1>
-          <p className="text-sm text-muted-foreground">Sistema de Gerenciamento Empresarial</p>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">FMS</h1>
+          <p className="text-sm text-muted-foreground">Fenox Management System</p>
         </div>
 
         {/* Configuration warning */}
@@ -81,21 +105,24 @@ export default function Login() {
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl">Entrar</CardTitle>
             <CardDescription>
-              Digite suas credenciais para acessar o sistema
+              Digite seu CPF e senha para acessar o sistema
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="cpf">CPF</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="seu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="cpf"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="000.000.000-00"
+                  value={cpf}
+                  onChange={(e) => handleCPFChange(e.target.value)}
                   required
-                  autoComplete="email"
+                  autoComplete="username"
+                  maxLength={14}
+                  className="font-mono"
                 />
               </div>
               <div className="space-y-2">
@@ -133,7 +160,7 @@ export default function Login() {
 
         {/* Footer */}
         <p className="text-center text-xs text-muted-foreground">
-          © 2024 SGE - Sistema de Gerenciamento Empresarial
+          © 2024 FMS - Fenox Management System
         </p>
       </div>
     </div>

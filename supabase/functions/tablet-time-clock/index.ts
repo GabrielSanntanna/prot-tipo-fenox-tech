@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -89,6 +90,36 @@ function validateLocation(
   };
 }
 
+/**
+ * Verifica PIN usando comparação com hash ou texto plano (retrocompatibilidade)
+ */
+async function verifyPin(inputPin: string, storedPin: string | null, storedPinHash: string | null): Promise<boolean> {
+  // Se tem hash, usa bcrypt
+  if (storedPinHash) {
+    try {
+      return await bcrypt.compare(inputPin, storedPinHash);
+    } catch (error) {
+      console.error('Error comparing PIN hash:', error);
+      return false;
+    }
+  }
+  
+  // Fallback para PIN em texto plano (retrocompatibilidade)
+  if (storedPin) {
+    return inputPin === storedPin;
+  }
+  
+  return false;
+}
+
+/**
+ * Gera hash do PIN usando bcrypt
+ */
+async function hashPin(pin: string): Promise<string> {
+  const salt = await bcrypt.genSalt(10);
+  return await bcrypt.hash(pin, salt);
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -157,45 +188,85 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Endpoint to verify PIN - FMS requires exactly 4 digits
     if (req.method === 'POST' && action === 'verify-pin') {
       const { pin } = await req.json();
 
-      if (!pin || pin.length < 4) {
+      // PIN must be exactly 4 digits
+      if (!pin || !/^\d{4}$/.test(pin)) {
         return new Response(
-          JSON.stringify({ error: 'PIN inválido' }),
+          JSON.stringify({ error: 'PIN deve ter exatamente 4 dígitos' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const { data: employee, error } = await supabase
+      // Find all active employees and check PIN
+      const { data: employees, error } = await supabase
         .from('employees')
         .select(`
           id,
           first_name,
           last_name,
           photo_url,
-          departments(name)
+          pin,
+          pin_hash,
+          department:departments(name)
         `)
-        .eq('pin', pin)
-        .eq('status', 'active')
-        .single();
+        .eq('status', 'active');
 
-      if (error || !employee) {
+      if (error) {
+        console.error('Error fetching employees:', error);
+        return new Response(
+          JSON.stringify({ error: 'Erro ao verificar PIN' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Find employee with matching PIN
+      let matchedEmployee = null;
+      for (const emp of employees || []) {
+        const isValid = await verifyPin(pin, emp.pin, emp.pin_hash);
+        if (isValid) {
+          matchedEmployee = emp;
+          break;
+        }
+      }
+
+      if (!matchedEmployee) {
         return new Response(
           JSON.stringify({ error: 'PIN não encontrado ou colaborador inativo' }),
           { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const department = (employee as any).departments;
+      const department = (matchedEmployee as any).department;
 
       return new Response(
         JSON.stringify({
-          id: employee.id,
-          nome: `${employee.first_name} ${employee.last_name}`,
+          id: matchedEmployee.id,
+          nome: `${matchedEmployee.first_name} ${matchedEmployee.last_name}`,
           departamento: department?.name,
-          fotoUrl: employee.photo_url,
+          fotoUrl: matchedEmployee.photo_url,
         }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Endpoint to hash a PIN (for admin use when creating/updating employees)
+    if (req.method === 'POST' && action === 'hash-pin') {
+      const { pin } = await req.json();
+
+      if (!pin || !/^\d{4}$/.test(pin)) {
+        return new Response(
+          JSON.stringify({ error: 'PIN deve ter exatamente 4 dígitos' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const hash = await hashPin(pin);
+
+      return new Response(
+        JSON.stringify({ pin_hash: hash }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
