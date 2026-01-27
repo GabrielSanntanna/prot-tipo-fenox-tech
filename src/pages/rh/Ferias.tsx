@@ -126,14 +126,14 @@ export default function Ferias() {
     try {
       await deleteVacation.mutateAsync(deleteId);
       toast({
-        title: 'Solicitação excluída',
-        description: 'A solicitação de férias foi excluída com sucesso.',
+        title: 'Solicitação cancelada',
+        description: 'A solicitação de férias foi cancelada e pode ser visualizada no filtro "Cancelado".',
       });
       setDeleteId(null);
     } catch (err) {
       toast({
         title: 'Erro',
-        description: 'Não foi possível excluir a solicitação.',
+        description: 'Não foi possível cancelar a solicitação.',
         variant: 'destructive',
       });
     }
@@ -322,22 +322,22 @@ export default function Ferias() {
         </Tabs>
       </div>
 
-      {/* Delete Dialog */}
+      {/* Cancel Dialog (Soft Delete) */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir solicitação?</AlertDialogTitle>
+            <AlertDialogTitle>Cancelar solicitação?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. A solicitação de férias será permanentemente excluída.
+              Esta solicitação será cancelada e poderá ser visualizada no filtro "Cancelado". Deseja continuar?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Excluir
+              Cancelar Solicitação
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

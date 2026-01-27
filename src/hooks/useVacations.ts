@@ -162,6 +162,7 @@ export function useUpdateVacationStatus() {
   });
 }
 
+// Soft delete - changes status to 'cancelled' instead of physical deletion
 export function useDeleteVacation() {
   const queryClient = useQueryClient();
 
@@ -169,12 +170,42 @@ export function useDeleteVacation() {
     mutationFn: async (id: string) => {
       if (!supabase) throw new Error('Supabase not configured');
 
-      const { error } = await supabase
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      // Get current status before updating
+      const { data: current, error: fetchError } = await supabase
         .from('vacations')
-        .delete()
+        .select('status')
+        .eq('id', id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Soft delete - update status to cancelled
+      const { error: updateError } = await supabase
+        .from('vacations')
+        .update({ status: 'cancelled' })
         .eq('id', id);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
+
+      // Log the action in audit_logs
+      const { error: auditError } = await supabase
+        .from('audit_logs')
+        .insert({
+          entity_type: 'vacation',
+          entity_id: id,
+          action: 'soft_delete',
+          previous_status: current.status,
+          new_status: 'cancelled',
+          performed_by: user.id,
+        });
+
+      if (auditError) {
+        console.error('Failed to create audit log:', auditError);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vacations'] });

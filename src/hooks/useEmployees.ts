@@ -148,6 +148,7 @@ export function useUpdateEmployee() {
   });
 }
 
+// Soft delete - changes status to 'terminated' instead of physical deletion
 export function useDeleteEmployee() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -158,23 +159,119 @@ export function useDeleteEmployee() {
         throw new Error('Supabase não configurado');
       }
 
-      const { error } = await supabase
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      // Get current status before updating
+      const { data: current, error: fetchError } = await supabase
         .from('employees')
-        .delete()
+        .select('status')
+        .eq('id', id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Soft delete - update status to terminated
+      const { error: updateError } = await supabase
+        .from('employees')
+        .update({ status: 'terminated' })
         .eq('id', id);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
+
+      // Log the action in audit_logs
+      const { error: auditError } = await supabase
+        .from('audit_logs')
+        .insert({
+          entity_type: 'employee',
+          entity_id: id,
+          action: 'soft_delete',
+          previous_status: current.status,
+          new_status: 'terminated',
+          performed_by: user.id,
+        });
+
+      if (auditError) {
+        console.error('Failed to create audit log:', auditError);
+        // Don't throw - the main action succeeded
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
       toast({
-        title: 'Colaborador removido',
-        description: 'O colaborador foi removido com sucesso.',
+        title: 'Colaborador inativado',
+        description: 'O colaborador foi inativado e pode ser visualizado no filtro "Desligado".',
       });
     },
     onError: (error: Error) => {
       toast({
-        title: 'Erro ao remover',
+        title: 'Erro ao inativar',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+// Reactivate employee - changes status from 'terminated' back to 'active'
+export function useReactivateEmployee() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (!isSupabaseConfigured || !supabase) {
+        throw new Error('Supabase não configurado');
+      }
+
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      // Get current status before updating
+      const { data: current, error: fetchError } = await supabase
+        .from('employees')
+        .select('status')
+        .eq('id', id)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Reactivate - update status to active
+      const { error: updateError } = await supabase
+        .from('employees')
+        .update({ status: 'active' })
+        .eq('id', id);
+
+      if (updateError) throw updateError;
+
+      // Log the action in audit_logs
+      const { error: auditError } = await supabase
+        .from('audit_logs')
+        .insert({
+          entity_type: 'employee',
+          entity_id: id,
+          action: 'reactivate',
+          previous_status: current.status,
+          new_status: 'active',
+          performed_by: user.id,
+        });
+
+      if (auditError) {
+        console.error('Failed to create audit log:', auditError);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employees'] });
+      toast({
+        title: 'Colaborador reativado',
+        description: 'O colaborador foi reativado com sucesso.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro ao reativar',
         description: error.message,
         variant: 'destructive',
       });

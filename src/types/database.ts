@@ -98,6 +98,20 @@ export interface TimeRecord {
   employee?: Employee;
 }
 
+// Audit log for tracking soft deletes and reactivations
+export interface AuditLog {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  previous_status: string | null;
+  new_status: string | null;
+  performed_by: string;
+  performed_at: string;
+  notes: string | null;
+  created_at: string;
+}
+
 // Form types
 export interface EmployeeFormData {
   employee_code?: string;
