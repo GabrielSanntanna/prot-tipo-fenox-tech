@@ -168,11 +168,14 @@ export type Database = {
           first_name: string
           hire_date: string
           id: string
+          initial_password: string | null
           last_name: string
           lgpd_consent: boolean | null
           lgpd_consent_at: string | null
           manager_id: string | null
           notes: string | null
+          password_changed: boolean | null
+          password_changed_at: string | null
           payment_type: string | null
           phone: string | null
           photo_url: string | null
@@ -201,11 +204,14 @@ export type Database = {
           first_name: string
           hire_date?: string
           id?: string
+          initial_password?: string | null
           last_name: string
           lgpd_consent?: boolean | null
           lgpd_consent_at?: string | null
           manager_id?: string | null
           notes?: string | null
+          password_changed?: boolean | null
+          password_changed_at?: string | null
           payment_type?: string | null
           phone?: string | null
           photo_url?: string | null
@@ -234,11 +240,14 @@ export type Database = {
           first_name?: string
           hire_date?: string
           id?: string
+          initial_password?: string | null
           last_name?: string
           lgpd_consent?: boolean | null
           lgpd_consent_at?: string | null
           manager_id?: string | null
           notes?: string | null
+          password_changed?: boolean | null
+          password_changed_at?: string | null
           payment_type?: string | null
           phone?: string | null
           photo_url?: string | null
