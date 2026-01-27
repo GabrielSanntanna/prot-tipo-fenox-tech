@@ -42,6 +42,7 @@ const formSchema = z.object({
   status: z.enum(['active', 'on_leave', 'terminated']),
   address: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
+  pin: z.string().regex(/^\d{4,6}$/, 'PIN deve ter 4 a 6 dígitos numéricos').optional().or(z.literal('')),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -70,6 +71,7 @@ export function FormularioColaborador({ employee, onSubmit, isLoading }: Formula
       status: 'active',
       address: '',
       notes: '',
+      pin: '',
     },
   });
 
@@ -98,6 +100,7 @@ export function FormularioColaborador({ employee, onSubmit, isLoading }: Formula
         status: employee.status,
         address: employee.address || '',
         notes: employee.notes || '',
+        pin: employee.pin || '',
       });
     }
   }, [employee, form]);
@@ -118,6 +121,7 @@ export function FormularioColaborador({ employee, onSubmit, isLoading }: Formula
       salary: values.salary || undefined,
       address: values.address || undefined,
       notes: values.notes || undefined,
+      pin: values.pin || undefined,
     };
     onSubmit(data);
   };
@@ -353,6 +357,25 @@ export function FormularioColaborador({ employee, onSubmit, isLoading }: Formula
                       <SelectItem value="terminated">Desligado</SelectItem>
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="pin"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>PIN (Ponto Tablet)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="••••"
+                      {...field}
+                    />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
