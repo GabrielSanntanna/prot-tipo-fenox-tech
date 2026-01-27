@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      // Find the employee with this CPF
+      // Find the employee with this CPF (anon policy allows this for login)
       const { data: employee, error: fetchError } = await supabase
         .from('employees')
         .select('email, status')
