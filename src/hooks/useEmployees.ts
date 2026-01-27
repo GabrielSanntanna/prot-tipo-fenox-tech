@@ -22,8 +22,7 @@ export function useEmployees(filters: EmployeeFilters = {}) {
         .select(`
           *,
           department:departments(*),
-          position:positions(*),
-          manager:employees!employees_manager_id_fkey(id, first_name, last_name)
+          position:positions(*)
         `)
         .order('first_name');
 
@@ -43,11 +42,7 @@ export function useEmployees(filters: EmployeeFilters = {}) {
 
       if (error) throw error;
       
-      // Transform manager array to single object (Supabase returns array for self-joins)
-      return (data || []).map(emp => ({
-        ...emp,
-        manager: Array.isArray(emp.manager) ? emp.manager[0] || null : emp.manager
-      })) as Employee[];
+      return (data || []) as Employee[];
     },
     enabled: isSupabaseConfigured,
   });
@@ -66,21 +61,14 @@ export function useEmployee(id: string | undefined) {
         .select(`
           *,
           department:departments(*),
-          position:positions(*),
-          manager:employees!employees_manager_id_fkey(id, first_name, last_name)
+          position:positions(*)
         `)
         .eq('id', id)
         .maybeSingle();
 
       if (error) throw error;
       
-      if (!data) return null;
-      
-      // Transform manager array to single object
-      return {
-        ...data,
-        manager: Array.isArray(data.manager) ? data.manager[0] || null : data.manager
-      } as Employee;
+      return data as Employee | null;
     },
     enabled: isSupabaseConfigured && !!id,
   });
