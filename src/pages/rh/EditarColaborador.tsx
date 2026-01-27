@@ -73,6 +73,7 @@ export default function EditarColaborador() {
           employee={employee}
           onSubmit={handleSubmit}
           isLoading={updateEmployee.isPending}
+          isEditing={true}
         />
       </div>
     </MainLayout>

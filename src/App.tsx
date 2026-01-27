@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import Login from "./pages/auth/Login";
+import TrocarSenha from "./pages/auth/TrocarSenha";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 
@@ -26,6 +27,9 @@ import Ponto from "./pages/rh/Ponto";
 // Tablet Module
 import PontoTablet from "./pages/tablet/PontoTablet";
 
+// Configurações
+import AlterarSenha from "./pages/configuracoes/AlterarSenha";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -38,6 +42,16 @@ const App = () => (
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
+            
+            {/* Password change route - requires auth but bypasses password check */}
+            <Route
+              path="/trocar-senha"
+              element={
+                <ProtectedRoute>
+                  <TrocarSenha />
+                </ProtectedRoute>
+              }
+            />
             
             {/* Protected routes */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -156,6 +170,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/configuracoes/alterar-senha"
+              element={
+                <ProtectedRoute>
+                  <AlterarSenha />
                 </ProtectedRoute>
               }
             />
