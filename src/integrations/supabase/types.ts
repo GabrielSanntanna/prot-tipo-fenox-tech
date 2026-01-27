@@ -50,6 +50,45 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          new_status: string | null
+          notes: string | null
+          performed_at: string
+          performed_by: string
+          previous_status: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          new_status?: string | null
+          notes?: string | null
+          performed_at?: string
+          performed_by: string
+          previous_status?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          new_status?: string | null
+          notes?: string | null
+          performed_at?: string
+          performed_by?: string
+          previous_status?: string | null
+        }
+        Relationships: []
+      }
       departments: {
         Row: {
           created_at: string

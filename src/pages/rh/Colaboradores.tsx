@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Filter, MoreHorizontal, Eye, Edit, Trash2, Users } from 'lucide-react';
+import { Plus, Search, Filter, MoreHorizontal, Eye, Edit, Trash2, Users, RotateCcw } from 'lucide-react';
 import MainLayout from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ModalConfirmacao } from '@/components/shared/ModalConfirmacao';
-import { useEmployees, useDeleteEmployee } from '@/hooks/useEmployees';
+import { useEmployees, useDeleteEmployee, useReactivateEmployee } from '@/hooks/useEmployees';
 import { useDepartments } from '@/hooks/useDepartments';
 import { EmployeeStatus } from '@/types/database';
 import { isSupabaseConfigured } from '@/integrations/supabase/client';
@@ -48,9 +48,10 @@ const statusColors: Record<EmployeeStatus, 'default' | 'secondary' | 'destructiv
 
 export default function Colaboradores() {
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<EmployeeStatus | 'all'>('all');
+  const [status, setStatus] = useState<EmployeeStatus | 'all'>('active'); // Default to active only
   const [departmentId, setDepartmentId] = useState<string>('all');
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [reactivateId, setReactivateId] = useState<string | null>(null);
 
   const { data: employees, isLoading } = useEmployees({
     search: search || undefined,
@@ -60,11 +61,19 @@ export default function Colaboradores() {
 
   const { data: departments } = useDepartments();
   const deleteEmployee = useDeleteEmployee();
+  const reactivateEmployee = useReactivateEmployee();
 
   const handleDelete = () => {
     if (deleteId) {
       deleteEmployee.mutate(deleteId);
       setDeleteId(null);
+    }
+  };
+
+  const handleReactivate = () => {
+    if (reactivateId) {
+      reactivateEmployee.mutate(reactivateId);
+      setReactivateId(null);
     }
   };
 
@@ -233,19 +242,30 @@ export default function Colaboradores() {
                                 Ver Perfil
                               </Link>
                             </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link to={`/rh/colaboradores/${employee.id}/editar`}>
-                                <Edit className="mr-2 h-4 w-4" />
-                                Editar
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => setDeleteId(employee.id)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Excluir
-                            </DropdownMenuItem>
+                            {employee.status !== 'terminated' && (
+                              <DropdownMenuItem asChild>
+                                <Link to={`/rh/colaboradores/${employee.id}/editar`}>
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Editar
+                                </Link>
+                              </DropdownMenuItem>
+                            )}
+                            {employee.status === 'terminated' ? (
+                              <DropdownMenuItem
+                                onClick={() => setReactivateId(employee.id)}
+                              >
+                                <RotateCcw className="mr-2 h-4 w-4" />
+                                Reativar
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onClick={() => setDeleteId(employee.id)}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Inativar
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -261,11 +281,21 @@ export default function Colaboradores() {
       <ModalConfirmacao
         open={!!deleteId}
         onOpenChange={(open) => !open && setDeleteId(null)}
-        title="Excluir colaborador"
-        description="Tem certeza que deseja excluir este colaborador? Esta ação não pode ser desfeita."
+        title="Inativar colaborador"
+        description="Este registro será inativado e poderá ser visualizado no filtro 'Desligado'. Deseja continuar?"
         onConfirm={handleDelete}
-        confirmText="Excluir"
+        confirmText="Inativar"
         variant="destructive"
+      />
+
+      <ModalConfirmacao
+        open={!!reactivateId}
+        onOpenChange={(open) => !open && setReactivateId(null)}
+        title="Reativar colaborador"
+        description="O colaborador será reativado e voltará a aparecer na listagem principal. Deseja continuar?"
+        onConfirm={handleReactivate}
+        confirmText="Reativar"
+        variant="default"
       />
     </MainLayout>
   );
