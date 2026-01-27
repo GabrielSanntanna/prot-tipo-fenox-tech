@@ -141,7 +141,13 @@ export default function SolicitarFerias() {
                         </FormControl>
                         <SelectContent>
                           {loadingEmployees ? (
-                            <SelectItem value="" disabled>Carregando...</SelectItem>
+                            <div className="py-2 px-2 text-sm text-muted-foreground">
+                              Carregando...
+                            </div>
+                          ) : employees?.length === 0 ? (
+                            <div className="py-2 px-2 text-sm text-muted-foreground">
+                              Nenhum colaborador encontrado
+                            </div>
                           ) : (
                             employees?.map((employee) => (
                               <SelectItem key={employee.id} value={employee.id}>
