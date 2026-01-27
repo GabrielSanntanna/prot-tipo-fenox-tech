@@ -1,214 +1,357 @@
 
-# Plano: Implementação de Soft Delete com Auditoria
+# Plano de Evolução: Fenox Management System (FMS)
 
-## Resumo
+## Análise do Estado Atual
 
-Transformar todas as operações de "excluir" no sistema para apenas **inativar** os registros (soft delete), mantendo os dados no banco e permitindo visualização através de filtros de status.
+Após análise detalhada do código, identifiquei os seguintes pontos:
 
-## Contexto Atual
+### O que já está implementado corretamente:
+- Soft delete para colaboradores (status = 'terminated')
+- Audit logs para ações de inativação/reativação
+- RLS com roles (admin, manager, rh, user)
+- Registro de ponto via tablet com PIN e geolocalização
+- Filtros por status na listagem de colaboradores
+- Sistema de férias com workflow de aprovação
 
-- **Colaboradores**: Usam `DELETE` físico no banco (`useDeleteEmployee`)
-- **Férias**: Usam `DELETE` físico no banco (`useDeleteVacation`)
-- **Status dos colaboradores**: Já existe enum `'active' | 'on_leave' | 'terminated'`
-- **Férias**: Já possuem `cancelled` como status válido
-- **Audit Log**: Não existe tabela de auditoria
+### Gaps identificados vs requisitos FMS:
 
-## Arquitetura Proposta
+| Requisito | Status Atual | Ação Necessária |
+|-----------|-------------|-----------------|
+| Login via CPF | Login via email | Refatorar autenticação |
+| Campos CPF/CNPJ | Não existe | Adicionar ao schema |
+| Tipo contrato (CLT/PJ) | Não existe | Adicionar enum e campo |
+| Tipo pagamento (Horista/Fixo) | Não existe | Adicionar enum e campo |
+| Horário de trabalho | Não existe | Adicionar campo |
+| PIN 4 dígitos hashado | PIN texto plano 4-6 | Ajustar para 4 fixo + hash |
+| Email citext + unique | varchar sem constraint | Adicionar extensão e constraint |
+| Telefone 11 dígitos | Sem validação | Adicionar CHECK + validação frontend |
+| Múltiplos departamentos | 1:N (um dept por emp) | Criar tabela N:N |
+| Roles expandidos | 4 roles atuais | Expandir enum |
+| Regras de horas CLT/PJ/Horista | Não implementado | Criar lógica de cálculo |
+| LGPD consent | Não existe | Adicionar flag + UI |
+| Offline time clock | Sem suporte | Implementar com localStorage |
+| Ajustes de ponto | Não existe | Criar módulo completo |
+| Atestados médicos | Não existe | Criar upload + workflow |
+| Bloquear DELETE físico | Apenas soft delete no código | Adicionar trigger no DB |
 
-```text
-+-------------------+       +-------------------+
-|   Botão Excluir   |  -->  |  UPDATE status    |
-|   (Frontend)      |       |  + Audit Log      |
-+-------------------+       +-------------------+
-                                    |
-                                    v
-                    +-------------------------------+
-                    |   Registro permanece no DB    |
-                    |   status = 'terminated'       |
-                    +-------------------------------+
-```
+---
 
-## Alterações Necessárias
+## Fase 1: Migrações de Banco de Dados
 
-### 1. Banco de Dados (Migração SQL)
-
-**Criar tabela `audit_logs`**:
-- `id` (UUID)
-- `entity_type` (varchar) - ex: 'employee', 'vacation'
-- `entity_id` (UUID) - ID do registro afetado
-- `action` (varchar) - 'soft_delete', 'reactivate', etc.
-- `previous_status` (varchar)
-- `new_status` (varchar)
-- `performed_by` (UUID) - ID do usuário que realizou ação
-- `performed_at` (timestamp)
-- `notes` (text) - observações adicionais
-
-**RLS para audit_logs**:
-- Admin/RH podem visualizar todos os logs
-- Usuários comuns podem ver apenas seus próprios logs
-
-### 2. Types (`src/types/database.ts`)
-
-| Alteração | Descrição |
-|-----------|-----------|
-| Adicionar `AuditLog` interface | Nova interface para logs de auditoria |
-
-### 3. Hooks
-
-**`src/hooks/useEmployees.ts`**:
-| Função | Alteração |
-|--------|-----------|
-| `useDeleteEmployee` | Renomear para `useDeactivateEmployee` internamente, mas manter export com nome antigo para compatibilidade |
-| Lógica | Trocar `DELETE` por `UPDATE status = 'terminated'` |
-| Novo | Adicionar insert na tabela `audit_logs` |
-| Toast | Alterar mensagem para "Colaborador inativado" |
-
-**`src/hooks/useVacations.ts`**:
-| Função | Alteração |
-|--------|-----------|
-| `useDeleteVacation` | Trocar `DELETE` por `UPDATE status = 'cancelled'` |
-| Novo | Adicionar insert na tabela `audit_logs` |
-| Toast | Alterar mensagem para "Solicitação cancelada" |
-
-**`src/hooks/useAuditLogs.ts`** (novo):
-| Função | Descrição |
-|--------|-----------|
-| `useAuditLogs` | Listar logs de auditoria com filtros |
-| `useCreateAuditLog` | Inserir novo log (uso interno) |
-
-### 4. Páginas
-
-**`src/pages/rh/Colaboradores.tsx`**:
-| Alteração | Descrição |
-|-----------|-----------|
-| Filtro padrão | Alterar estado inicial de `status` de `'all'` para `'active'` |
-| Modal de confirmação | Alterar texto para "Este registro será inativado e poderá ser visualizado no filtro de inativos" |
-| Botão Editar | Desabilitar para registros com status `terminated` |
-| Novo filtro | Adicionar opção "Inativo" no Select de status (já existe como "Desligado") |
-
-**`src/pages/rh/Ferias.tsx`**:
-| Alteração | Descrição |
-|-----------|-----------|
-| Modal de exclusão | Alterar texto para indicar cancelamento |
-| Feedback | Alterar mensagem de sucesso |
-
-### 5. Reativação de Registros
-
-**Novo hook `useReactivateEmployee`**:
-- Apenas Admin/RH podem reativar
-- Muda status de `terminated` para `active`
-- Registra no audit log
-
-**UI para reativação**:
-- Adicionar botão "Reativar" no dropdown de ações
-- Visível apenas para registros inativos
-- Apenas para usuários com permissão
-
-## Fluxo de Soft Delete
-
-```text
-1. Usuário clica "Excluir"
-2. Modal exibe: "Este registro será inativado..."
-3. Usuário confirma
-4. Sistema executa:
-   a. Busca status atual do registro
-   b. UPDATE status = 'terminated' (ou 'cancelled' para férias)
-   c. INSERT audit_log com detalhes
-5. Query é invalidada
-6. Registro some da listagem (filtro padrão = active)
-7. Toast: "Colaborador inativado com sucesso"
-```
-
-## Arquivos a Criar/Modificar
-
-| Arquivo | Ação |
-|---------|------|
-| `supabase/migrations/XXX_audit_logs.sql` | Criar |
-| `src/types/database.ts` | Modificar |
-| `src/hooks/useEmployees.ts` | Modificar |
-| `src/hooks/useVacations.ts` | Modificar |
-| `src/hooks/useAuditLogs.ts` | Criar |
-| `src/pages/rh/Colaboradores.tsx` | Modificar |
-| `src/pages/rh/Ferias.tsx` | Modificar |
-
-## Detalhes Técnicos
-
-### Migração SQL para audit_logs
+### 1.1 Habilitar citext e adicionar constraints de email
 
 ```sql
-CREATE TABLE public.audit_logs (
+-- Habilitar extensão citext
+CREATE EXTENSION IF NOT EXISTS citext;
+
+-- Alterar coluna email para citext e adicionar UNIQUE
+ALTER TABLE public.employees 
+  ALTER COLUMN email TYPE citext;
+
+ALTER TABLE public.employees 
+  ADD CONSTRAINT employees_email_unique UNIQUE (email);
+```
+
+### 1.2 Adicionar novos campos à tabela employees
+
+```sql
+-- Adicionar novos campos
+ALTER TABLE public.employees
+  ADD COLUMN cpf_cnpj VARCHAR(18),
+  ADD COLUMN document_type VARCHAR(4) DEFAULT 'cpf' CHECK (document_type IN ('cpf', 'cnpj')),
+  ADD COLUMN contract_type VARCHAR(10) DEFAULT 'clt' CHECK (contract_type IN ('clt', 'pj')),
+  ADD COLUMN payment_type VARCHAR(10) DEFAULT 'fixed' CHECK (payment_type IN ('hourly', 'fixed')),
+  ADD COLUMN work_schedule TEXT,
+  ADD COLUMN lgpd_consent BOOLEAN DEFAULT FALSE,
+  ADD COLUMN lgpd_consent_at TIMESTAMPTZ,
+  ADD COLUMN biometry_consent BOOLEAN DEFAULT FALSE,
+  ADD COLUMN biometry_consent_at TIMESTAMPTZ,
+  ADD COLUMN pin_hash VARCHAR(255);
+
+-- Constraint para CPF/CNPJ único
+ALTER TABLE public.employees 
+  ADD CONSTRAINT employees_cpf_cnpj_unique UNIQUE (cpf_cnpj);
+
+-- Constraint para telefone (11 dígitos)
+ALTER TABLE public.employees 
+  ADD CONSTRAINT employees_phone_format 
+  CHECK (phone IS NULL OR phone ~ '^\d{11}$');
+```
+
+### 1.3 Criar tabela N:N para múltiplos departamentos
+
+```sql
+CREATE TABLE public.employee_departments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  entity_type VARCHAR NOT NULL,
-  entity_id UUID NOT NULL,
-  action VARCHAR NOT NULL,
-  previous_status VARCHAR,
-  new_status VARCHAR,
-  performed_by UUID NOT NULL,
-  performed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  department_id UUID NOT NULL REFERENCES public.departments(id) ON DELETE CASCADE,
+  is_primary BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(employee_id, department_id)
 );
 
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_departments ENABLE ROW LEVEL SECURITY;
 
--- Admin/RH podem ver todos os logs
-CREATE POLICY "Admin/RH can view all audit_logs"
-  ON public.audit_logs FOR SELECT
+-- RLS policies
+CREATE POLICY "Authenticated can view employee_departments"
+  ON public.employee_departments FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Admin/RH can manage employee_departments"
+  ON public.employee_departments FOR ALL
   USING (has_admin_access(auth.uid()));
-
--- Usuários podem ver logs de suas próprias ações
-CREATE POLICY "Users can view own audit_logs"
-  ON public.audit_logs FOR SELECT
-  USING (auth.uid() = performed_by);
-
--- Admin/RH podem inserir logs
-CREATE POLICY "Admin/RH can insert audit_logs"
-  ON public.audit_logs FOR INSERT
-  WITH CHECK (has_admin_access(auth.uid()));
 ```
 
-### Lógica de useDeactivateEmployee
+### 1.4 Expandir roles para novos perfis
+
+```sql
+-- Adicionar novos valores ao enum (PostgreSQL não permite remover, apenas adicionar)
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'diretoria';
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'dp';
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'financeiro';
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'infraestrutura';
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'desenvolvimento';
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'suporte';
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'mesa_analise';
+```
+
+### 1.5 Criar módulo de ajustes de ponto
+
+```sql
+-- Enum para status de ajuste
+CREATE TYPE public.adjustment_status AS ENUM ('pending', 'approved', 'rejected');
+
+-- Tabela de ajustes de ponto
+CREATE TABLE public.time_adjustments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  record_date DATE NOT NULL,
+  original_time TIMESTAMPTZ,
+  requested_time TIMESTAMPTZ NOT NULL,
+  record_type time_record_type NOT NULL,
+  justification TEXT NOT NULL,
+  attachment_url TEXT,
+  status adjustment_status NOT NULL DEFAULT 'pending',
+  requested_by UUID NOT NULL,
+  reviewed_by UUID,
+  reviewed_at TIMESTAMPTZ,
+  review_notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.time_adjustments ENABLE ROW LEVEL SECURITY;
+```
+
+### 1.6 Bloquear DELETE físico no banco
+
+```sql
+-- Trigger para IMPEDIR DELETE físico em employees
+CREATE OR REPLACE FUNCTION public.prevent_employee_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'DELETE não permitido na tabela employees. Use soft delete (status = terminated).';
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER employees_prevent_delete
+  BEFORE DELETE ON public.employees
+  FOR EACH ROW
+  EXECUTE FUNCTION public.prevent_employee_delete();
+```
+
+---
+
+## Fase 2: Refatorar Autenticação para CPF
+
+### 2.1 Modificar AuthContext
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/contexts/AuthContext.tsx` | Alterar signIn para aceitar CPF, converter para email interno |
+
+### Lógica de autenticação por CPF:
+
+```text
+1. Usuário digita CPF + senha
+2. Sistema busca na tabela employees o email associado ao CPF
+3. Usa o email para autenticar no Supabase Auth
+4. Mantém compatibilidade com sistema existente
+```
+
+### 2.2 Atualizar página de Login
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/pages/auth/Login.tsx` | Trocar campo email por CPF com máscara |
+| | Adicionar validação de formato CPF |
+| | Renomear labels e placeholders |
+
+---
+
+## Fase 3: Atualizar Formulário de Colaboradores
+
+### 3.1 Modificar FormularioColaborador
+
+| Campo Novo | Validação | Máscara |
+|------------|-----------|---------|
+| CPF/CNPJ | Algoritmo validador | 000.000.000-00 ou 00.000.000/0000-00 |
+| Tipo documento | Radio CPF/CNPJ | - |
+| Tipo contrato | Select CLT/PJ | - |
+| Tipo pagamento | Select Horista/Fixo | - |
+| Horário de trabalho | Texto | - |
+| Telefone | 11 dígitos obrigatórios | (00) 00000-0000 |
+| PIN | Exatamente 4 dígitos | 0000 (mascarado após salvar) |
+
+### 3.2 Implementar hash do PIN
 
 ```typescript
-// Pseudocódigo
-async function deactivateEmployee(id: string) {
-  // 1. Buscar status atual
-  const { data: current } = await supabase
-    .from('employees')
-    .select('status')
-    .eq('id', id)
-    .single();
-
-  // 2. Atualizar para inativo
-  await supabase
-    .from('employees')
-    .update({ status: 'terminated' })
-    .eq('id', id);
-
-  // 3. Registrar auditoria
-  await supabase.from('audit_logs').insert({
-    entity_type: 'employee',
-    entity_id: id,
-    action: 'soft_delete',
-    previous_status: current.status,
-    new_status: 'terminated',
-    performed_by: user.id,
-  });
-}
+// Usar bcrypt ou argon2 para hash do PIN antes de salvar
+// No edge function tablet-time-clock, comparar hash
 ```
 
-## Segurança
+---
 
-- Registros inativos não podem ser editados por usuários comuns
-- Reativação apenas por Admin/RH
-- Todas as ações são registradas no audit log
-- RLS garante que apenas usuários autorizados vejam logs
+## Fase 4: Implementar Consentimento LGPD
 
-## Resultado Esperado
+### 4.1 Criar componente de Termos
 
-1. Nenhum registro será fisicamente excluído do banco
-2. Registros "excluídos" terão status `terminated` (colaboradores) ou `cancelled` (férias)
-3. Listagem padrão mostra apenas registros ativos
-4. Filtro permite visualizar registros inativos
-5. Todas as ações são auditadas
-6. Apenas Admin/RH podem reativar registros
+| Arquivo Novo | Descrição |
+|--------------|-----------|
+| `src/components/auth/TermosLGPD.tsx` | Modal com termos e checkboxes |
+| `src/pages/auth/ConsentimentoLGPD.tsx` | Página de consentimento pós-login |
+
+### 4.2 Fluxo de consentimento
+
+```text
+1. Usuário faz login
+2. Se lgpd_consent = false, redireciona para /consentimento
+3. Usuário lê termos e marca checkboxes
+4. Sistema atualiza employees com lgpd_consent = true e timestamp
+5. Usuário pode acessar o sistema
+```
+
+---
+
+## Fase 5: Regras de Cálculo de Horas
+
+### 5.1 Criar serviço de cálculo
+
+| Arquivo Novo | Descrição |
+|--------------|-----------|
+| `src/services/hoursCalculation.ts` | Lógica centralizada de cálculo |
+
+### Regras implementadas:
+
+```text
+CLT:
+- Jornada padrão: 8h
+- Hora extra: após 11 minutos excedidos
+- Atrasos: geram horas negativas
+- Banco de horas quadrimestral
+
+HORISTA:
+- Qualquer minuto extra = hora positiva
+- Nunca gera hora negativa
+
+PJ:
+- Apenas registro de presença
+- Sem horas extras
+```
+
+---
+
+## Fase 6: Módulo de Ajustes e Atestados
+
+### 6.1 Criar páginas e componentes
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `src/pages/rh/SolicitarAjuste.tsx` | Formulário para solicitar ajuste |
+| `src/pages/rh/GerenciarAjustes.tsx` | Lista de ajustes para RH/DP aprovar |
+| `src/hooks/useTimeAdjustments.ts` | CRUD de ajustes |
+| `src/components/rh/UploadAtestado.tsx` | Upload de atestado médico |
+
+### 6.2 Storage para atestados
+
+```sql
+-- Criar bucket para atestados
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('medical-certificates', 'medical-certificates', false);
+```
+
+---
+
+## Fase 7: Suporte Offline para Tablet
+
+### 7.1 Implementar service worker
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `src/pages/tablet/PontoTablet.tsx` | Adicionar lógica de offline |
+| `public/sw.js` | Service worker para cache |
+
+### Lógica offline:
+
+```text
+1. Detectar se está offline
+2. Salvar registro no localStorage
+3. Quando voltar online, sincronizar com Supabase
+4. Exibir indicador visual de pendências
+```
+
+---
+
+## Resumo de Arquivos
+
+### Novos arquivos a criar:
+- `src/services/hoursCalculation.ts`
+- `src/components/auth/TermosLGPD.tsx`
+- `src/pages/auth/ConsentimentoLGPD.tsx`
+- `src/pages/rh/SolicitarAjuste.tsx`
+- `src/pages/rh/GerenciarAjustes.tsx`
+- `src/hooks/useTimeAdjustments.ts`
+- `src/components/rh/UploadAtestado.tsx`
+- `src/utils/cpfValidator.ts`
+- `src/utils/pinHash.ts`
+
+### Arquivos a modificar:
+- `src/contexts/AuthContext.tsx` - Login por CPF
+- `src/pages/auth/Login.tsx` - UI para CPF
+- `src/components/rh/FormularioColaborador.tsx` - Novos campos
+- `src/types/database.ts` - Novas interfaces
+- `src/hooks/useEmployees.ts` - Hash de PIN
+- `src/pages/tablet/PontoTablet.tsx` - Suporte offline
+- `supabase/functions/tablet-time-clock/index.ts` - Comparar hash PIN
+
+### Migrações SQL necessárias:
+1. Extensão citext + constraint email
+2. Novos campos employees
+3. Tabela employee_departments
+4. Expandir enum app_role
+5. Tabela time_adjustments
+6. Trigger prevent_employee_delete
+7. Bucket medical-certificates
+
+---
+
+## Ordem de Implementação Recomendada
+
+1. **Migrações de banco** (Fase 1) - Base para tudo
+2. **Formulário colaboradores** (Fase 3) - Novos campos
+3. **LGPD consent** (Fase 4) - Segurança/compliance
+4. **Autenticação CPF** (Fase 2) - Requisito crítico
+5. **Cálculo de horas** (Fase 5) - Regras de negócio
+6. **Ajustes/Atestados** (Fase 6) - Funcionalidade RH
+7. **Offline tablet** (Fase 7) - Nice to have
+
+---
+
+## Considerações de Segurança
+
+- PIN será hashado com bcrypt antes de salvar
+- DELETE físico bloqueado no banco por trigger
+- RLS ativo em todas as tabelas sensíveis
+- Consentimento LGPD obrigatório para acesso
+- Atestados em bucket privado com RLS
+- Validação de CPF/email em frontend, backend E banco
