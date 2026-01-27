@@ -113,75 +113,144 @@ export type Database = {
         }
         Relationships: []
       }
+      employee_departments: {
+        Row: {
+          created_at: string
+          department_id: string
+          employee_id: string
+          id: string
+          is_primary: boolean | null
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          employee_id: string
+          id?: string
+          is_primary?: boolean | null
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          employee_id?: string
+          id?: string
+          is_primary?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employee_departments_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employee_departments_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       employees: {
         Row: {
           address: string | null
+          biometry_consent: boolean | null
+          biometry_consent_at: string | null
           birth_date: string | null
+          contract_type: string | null
+          cpf_cnpj: string | null
           created_at: string
           department_id: string | null
+          document_type: string | null
           email: string
           employee_code: string | null
           first_name: string
           hire_date: string
           id: string
           last_name: string
+          lgpd_consent: boolean | null
+          lgpd_consent_at: string | null
           manager_id: string | null
           notes: string | null
+          payment_type: string | null
           phone: string | null
           photo_url: string | null
           pin: string | null
+          pin_hash: string | null
           position_id: string | null
           salary: number | null
           status: Database["public"]["Enums"]["employee_status"]
           termination_date: string | null
           updated_at: string
           user_id: string | null
+          work_schedule: string | null
         }
         Insert: {
           address?: string | null
+          biometry_consent?: boolean | null
+          biometry_consent_at?: string | null
           birth_date?: string | null
+          contract_type?: string | null
+          cpf_cnpj?: string | null
           created_at?: string
           department_id?: string | null
+          document_type?: string | null
           email: string
           employee_code?: string | null
           first_name: string
           hire_date?: string
           id?: string
           last_name: string
+          lgpd_consent?: boolean | null
+          lgpd_consent_at?: string | null
           manager_id?: string | null
           notes?: string | null
+          payment_type?: string | null
           phone?: string | null
           photo_url?: string | null
           pin?: string | null
+          pin_hash?: string | null
           position_id?: string | null
           salary?: number | null
           status?: Database["public"]["Enums"]["employee_status"]
           termination_date?: string | null
           updated_at?: string
           user_id?: string | null
+          work_schedule?: string | null
         }
         Update: {
           address?: string | null
+          biometry_consent?: boolean | null
+          biometry_consent_at?: string | null
           birth_date?: string | null
+          contract_type?: string | null
+          cpf_cnpj?: string | null
           created_at?: string
           department_id?: string | null
+          document_type?: string | null
           email?: string
           employee_code?: string | null
           first_name?: string
           hire_date?: string
           id?: string
           last_name?: string
+          lgpd_consent?: boolean | null
+          lgpd_consent_at?: string | null
           manager_id?: string | null
           notes?: string | null
+          payment_type?: string | null
           phone?: string | null
           photo_url?: string | null
           pin?: string | null
+          pin_hash?: string | null
           position_id?: string | null
           salary?: number | null
           status?: Database["public"]["Enums"]["employee_status"]
           termination_date?: string | null
           updated_at?: string
           user_id?: string | null
+          work_schedule?: string | null
         }
         Relationships: [
           {
@@ -268,6 +337,68 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      time_adjustments: {
+        Row: {
+          attachment_url: string | null
+          created_at: string
+          employee_id: string
+          id: string
+          justification: string
+          original_time: string | null
+          record_date: string
+          record_type: Database["public"]["Enums"]["time_record_type"]
+          requested_by: string
+          requested_time: string
+          review_notes: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: Database["public"]["Enums"]["adjustment_status"]
+          updated_at: string
+        }
+        Insert: {
+          attachment_url?: string | null
+          created_at?: string
+          employee_id: string
+          id?: string
+          justification: string
+          original_time?: string | null
+          record_date: string
+          record_type: Database["public"]["Enums"]["time_record_type"]
+          requested_by: string
+          requested_time: string
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["adjustment_status"]
+          updated_at?: string
+        }
+        Update: {
+          attachment_url?: string | null
+          created_at?: string
+          employee_id?: string
+          id?: string
+          justification?: string
+          original_time?: string | null
+          record_date?: string
+          record_type?: Database["public"]["Enums"]["time_record_type"]
+          requested_by?: string
+          requested_time?: string
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["adjustment_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_adjustments_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       time_records: {
         Row: {
@@ -420,7 +551,19 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "manager" | "rh" | "user"
+      adjustment_status: "pending" | "approved" | "rejected"
+      app_role:
+        | "admin"
+        | "manager"
+        | "rh"
+        | "user"
+        | "diretoria"
+        | "dp"
+        | "financeiro"
+        | "infraestrutura"
+        | "desenvolvimento"
+        | "suporte"
+        | "mesa_analise"
       employee_status: "active" | "on_leave" | "terminated"
       time_record_type: "entry" | "lunch_out" | "lunch_in" | "exit"
       vacation_status: "pending" | "approved" | "rejected" | "cancelled"
@@ -551,7 +694,20 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "manager", "rh", "user"],
+      adjustment_status: ["pending", "approved", "rejected"],
+      app_role: [
+        "admin",
+        "manager",
+        "rh",
+        "user",
+        "diretoria",
+        "dp",
+        "financeiro",
+        "infraestrutura",
+        "desenvolvimento",
+        "suporte",
+        "mesa_analise",
+      ],
       employee_status: ["active", "on_leave", "terminated"],
       time_record_type: ["entry", "lunch_out", "lunch_in", "exit"],
       vacation_status: ["pending", "approved", "rejected", "cancelled"],

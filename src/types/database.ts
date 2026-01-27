@@ -1,9 +1,13 @@
 // Database types matching Supabase schema
 
-export type AppRole = 'admin' | 'manager' | 'rh' | 'user';
+export type AppRole = 'admin' | 'manager' | 'rh' | 'user' | 'diretoria' | 'dp' | 'financeiro' | 'infraestrutura' | 'desenvolvimento' | 'suporte' | 'mesa_analise';
 export type VacationStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 export type TimeRecordType = 'entry' | 'lunch_out' | 'lunch_in' | 'exit';
 export type EmployeeStatus = 'active' | 'on_leave' | 'terminated';
+export type DocumentType = 'cpf' | 'cnpj';
+export type ContractType = 'clt' | 'pj';
+export type PaymentType = 'hourly' | 'fixed';
+export type AdjustmentStatus = 'pending' | 'approved' | 'rejected';
 
 export interface Department {
   id: string;
@@ -57,13 +61,34 @@ export interface Employee {
   address: string | null;
   notes: string | null;
   pin: string | null;
+  pin_hash: string | null;
   photo_url: string | null;
+  // FMS new fields
+  cpf_cnpj: string | null;
+  document_type: DocumentType;
+  contract_type: ContractType;
+  payment_type: PaymentType;
+  work_schedule: string | null;
+  lgpd_consent: boolean;
+  lgpd_consent_at: string | null;
+  biometry_consent: boolean;
+  biometry_consent_at: string | null;
   created_at: string;
   updated_at: string;
   // Joined fields
   department?: Department;
   position?: Position;
   manager?: { id: string; first_name: string; last_name: string } | null;
+}
+
+export interface EmployeeDepartment {
+  id: string;
+  employee_id: string;
+  department_id: string;
+  is_primary: boolean;
+  created_at: string;
+  // Joined fields
+  department?: Department;
 }
 
 export interface Vacation {
@@ -92,8 +117,29 @@ export interface TimeRecord {
   type: TimeRecordType;
   recorded_by: string;
   location: string | null;
+  photo_url: string | null;
   notes: string | null;
   created_at: string;
+  // Joined fields
+  employee?: Employee;
+}
+
+export interface TimeAdjustment {
+  id: string;
+  employee_id: string;
+  record_date: string;
+  original_time: string | null;
+  requested_time: string;
+  record_type: TimeRecordType;
+  justification: string;
+  attachment_url: string | null;
+  status: AdjustmentStatus;
+  requested_by: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
+  created_at: string;
+  updated_at: string;
   // Joined fields
   employee?: Employee;
 }
@@ -129,4 +175,10 @@ export interface EmployeeFormData {
   address?: string;
   notes?: string;
   pin?: string;
+  // FMS new fields
+  cpf_cnpj?: string;
+  document_type?: DocumentType;
+  contract_type?: ContractType;
+  payment_type?: PaymentType;
+  work_schedule?: string;
 }
