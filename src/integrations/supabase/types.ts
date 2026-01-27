@@ -526,7 +526,24 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      employees_login_lookup: {
+        Row: {
+          cpf_cnpj: string | null
+          email: string | null
+          status: Database["public"]["Enums"]["employee_status"] | null
+        }
+        Insert: {
+          cpf_cnpj?: string | null
+          email?: string | null
+          status?: Database["public"]["Enums"]["employee_status"] | null
+        }
+        Update: {
+          cpf_cnpj?: string | null
+          email?: string | null
+          status?: Database["public"]["Enums"]["employee_status"] | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       get_employee_id: { Args: { _user_id: string }; Returns: string }
