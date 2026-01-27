@@ -25,7 +25,7 @@ import { useDepartments } from '@/hooks/useDepartments';
 import { usePositions } from '@/hooks/usePositions';
 import { useEmployees } from '@/hooks/useEmployees';
 import { Employee, EmployeeFormData } from '@/types/database';
-import { Loader2 } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 
 const formSchema = z.object({
   employee_code: z.string().max(20).optional(),
@@ -367,15 +367,29 @@ export function FormularioColaborador({ employee, onSubmit, isLoading }: Formula
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>PIN (Ponto Tablet)</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="password"
-                      inputMode="numeric"
-                      maxLength={6}
-                      placeholder="••••"
-                      {...field}
-                    />
-                  </FormControl>
+                  <div className="flex gap-2">
+                    <FormControl>
+                      <Input
+                        type="password"
+                        inputMode="numeric"
+                        maxLength={6}
+                        placeholder="••••"
+                        {...field}
+                      />
+                    </FormControl>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        const randomPin = Math.floor(1000 + Math.random() * 9000).toString();
+                        field.onChange(randomPin);
+                      }}
+                      title="Gerar PIN aleatório"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
