@@ -27,7 +27,8 @@ import { useDepartments } from '@/hooks/useDepartments';
 import { usePositions } from '@/hooks/usePositions';
 import { useEmployees } from '@/hooks/useEmployees';
 import { Employee, EmployeeFormData } from '@/types/database';
-import { Loader2, RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { Loader2, RefreshCw, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { 
   formatDocument, 
   formatPhone, 
@@ -37,7 +38,7 @@ import {
 } from '@/utils/cpfValidator';
 import { validatePin, generateRandomPin, formatPin, maskPin } from '@/utils/pinHash';
 
-const formSchema = z.object({
+const baseSchema = z.object({
   employee_code: z.string().max(20).optional(),
   first_name: z.string().min(1, 'Nome é obrigatório').max(100),
   last_name: z.string().min(1, 'Sobrenome é obrigatório').max(100),
@@ -72,6 +73,29 @@ const formSchema = z.object({
   contract_type: z.enum(['clt', 'pj']),
   payment_type: z.enum(['hourly', 'fixed']),
   work_schedule: z.string().max(100).optional(),
+  // Password fields for new employee
+  initial_password: z.string()
+    .optional()
+    .refine((val) => !val || val.length >= 8, {
+      message: 'Senha deve ter no mínimo 8 caracteres',
+    })
+    .refine((val) => !val || /[A-Z]/.test(val), {
+      message: 'Senha deve conter pelo menos uma letra maiúscula',
+    })
+    .refine((val) => !val || /[0-9]/.test(val), {
+      message: 'Senha deve conter pelo menos um número',
+    }),
+  confirm_password: z.string().optional(),
+});
+
+const formSchema = baseSchema.refine((data) => {
+  if (data.initial_password && data.confirm_password) {
+    return data.initial_password === data.confirm_password;
+  }
+  return true;
+}, {
+  message: 'As senhas não conferem',
+  path: ['confirm_password'],
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -80,11 +104,13 @@ interface FormularioColaboradorProps {
   employee?: Employee | null;
   onSubmit: (data: EmployeeFormData) => void;
   isLoading?: boolean;
+  isEditing?: boolean;
 }
 
-export function FormularioColaborador({ employee, onSubmit, isLoading }: FormularioColaboradorProps) {
+export function FormularioColaborador({ employee, onSubmit, isLoading, isEditing = false }: FormularioColaboradorProps) {
   const [showPin, setShowPin] = useState(false);
-  
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -108,6 +134,8 @@ export function FormularioColaborador({ employee, onSubmit, isLoading }: Formula
       contract_type: 'clt',
       payment_type: 'fixed',
       work_schedule: '',
+      initial_password: '',
+      confirm_password: '',
     },
   });
 
@@ -196,6 +224,7 @@ export function FormularioColaborador({ employee, onSubmit, isLoading }: Formula
       contract_type: values.contract_type,
       payment_type: values.payment_type,
       work_schedule: values.work_schedule || undefined,
+      initial_password: !isEditing && values.initial_password ? values.initial_password : undefined,
     };
     onSubmit(data);
   };
@@ -618,6 +647,94 @@ export function FormularioColaborador({ employee, onSubmit, isLoading }: Formula
             />
           </CardContent>
         </Card>
+
+        {/* Credenciais de Acesso - Only for new employee */}
+        {!isEditing && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Credenciais de Acesso</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="initial_password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Senha Inicial *</FormLabel>
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          type={showPassword ? 'text' : 'password'}
+                          placeholder="••••••••"
+                          className="pr-10"
+                          {...field}
+                        />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </div>
+                    <FormDescription>
+                      Mínimo 8 caracteres, 1 maiúscula e 1 número
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="confirm_password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Confirmar Senha *</FormLabel>
+                    <div className="relative">
+                      <FormControl>
+                        <Input
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          placeholder="••••••••"
+                          className="pr-10"
+                          {...field}
+                        />
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="sm:col-span-2">
+                <Alert>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>
+                    Esta é uma senha temporária. O colaborador será obrigado a trocá-la no primeiro acesso ao sistema.
+                  </AlertDescription>
+                </Alert>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Observações */}
         <Card>

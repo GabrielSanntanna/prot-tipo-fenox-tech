@@ -173,6 +173,7 @@ export type Database = {
           lgpd_consent: boolean | null
           lgpd_consent_at: string | null
           manager_id: string | null
+          must_change_password: boolean
           notes: string | null
           password_changed: boolean | null
           password_changed_at: string | null
@@ -209,6 +210,7 @@ export type Database = {
           lgpd_consent?: boolean | null
           lgpd_consent_at?: string | null
           manager_id?: string | null
+          must_change_password?: boolean
           notes?: string | null
           password_changed?: boolean | null
           password_changed_at?: string | null
@@ -245,6 +247,7 @@ export type Database = {
           lgpd_consent?: boolean | null
           lgpd_consent_at?: string | null
           manager_id?: string | null
+          must_change_password?: boolean
           notes?: string | null
           password_changed?: boolean | null
           password_changed_at?: string | null

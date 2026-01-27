@@ -38,6 +38,7 @@ export default function NovoColaborador() {
         <FormularioColaborador
           onSubmit={handleSubmit}
           isLoading={createEmployee.isPending}
+          isEditing={false}
         />
       </div>
     </MainLayout>

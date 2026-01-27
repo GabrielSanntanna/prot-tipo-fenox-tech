@@ -73,6 +73,11 @@ export interface Employee {
   lgpd_consent_at: string | null;
   biometry_consent: boolean;
   biometry_consent_at: string | null;
+  // Password management
+  initial_password: string | null;
+  password_changed: boolean;
+  password_changed_at: string | null;
+  must_change_password: boolean;
   created_at: string;
   updated_at: string;
   // Joined fields
@@ -181,4 +186,6 @@ export interface EmployeeFormData {
   contract_type?: ContractType;
   payment_type?: PaymentType;
   work_schedule?: string;
+  // Password field for new employee
+  initial_password?: string;
 }
