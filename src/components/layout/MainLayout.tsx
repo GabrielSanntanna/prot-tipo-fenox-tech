@@ -5,7 +5,8 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Building2, ChevronLeft, ChevronRight, LayoutDashboard, Users, Calendar, Clock, DollarSign, FolderKanban, Headphones, TrendingUp, Settings, LogOut, Bell, User } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LayoutDashboard, Users, Calendar, Clock, DollarSign, FolderKanban, Headphones, TrendingUp, Settings, LogOut, Bell, User } from 'lucide-react';
+import logoImage from '@/assets/logo.png';
 interface MainLayoutProps {
   children: ReactNode;
 }
@@ -78,9 +79,7 @@ export default function MainLayout({
         {/* Logo */}
         <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
           {!sidebarCollapsed && <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary">
-                <Building2 className="h-5 w-5 text-sidebar-primary-foreground" />
-              </div>
+              <img src={logoImage} alt="Fenox Tecnologia" className="h-9 w-9 rounded-lg object-contain" />
               <span className="text-lg font-bold">Fenox Tecnologia</span>
             </div>}
           <Button variant="ghost" size="icon" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
