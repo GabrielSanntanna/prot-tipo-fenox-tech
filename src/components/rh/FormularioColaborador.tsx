@@ -370,10 +370,11 @@ export function FormularioColaborador({ employee, onSubmit, isLoading }: Formula
                   <div className="flex gap-2">
                     <FormControl>
                       <Input
-                        type="password"
+                        type="text"
                         inputMode="numeric"
                         maxLength={6}
-                        placeholder="••••"
+                        placeholder="1234"
+                        className="font-mono tracking-widest"
                         {...field}
                       />
                     </FormControl>
