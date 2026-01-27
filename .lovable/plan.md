@@ -1,357 +1,392 @@
 
-# Plano de Evolução: Fenox Management System (FMS)
+# Plano de Implementacao: Onboarding de Usuarios com Senha e Troca Obrigatoria
 
-## Análise do Estado Atual
+## Analise do Estado Atual
 
-Após análise detalhada do código, identifiquei os seguintes pontos:
+### Campos ja existentes na tabela `employees`:
+- `initial_password` (VARCHAR) - para senha temporaria
+- `password_changed` (BOOLEAN, default false) - rastreamento de troca
+- `password_changed_at` (TIMESTAMPTZ) - timestamp da troca
+- `user_id` (UUID) - vinculo com auth.users
 
-### O que já está implementado corretamente:
-- Soft delete para colaboradores (status = 'terminated')
-- Audit logs para ações de inativação/reativação
-- RLS com roles (admin, manager, rh, user)
-- Registro de ponto via tablet com PIN e geolocalização
-- Filtros por status na listagem de colaboradores
-- Sistema de férias com workflow de aprovação
-
-### Gaps identificados vs requisitos FMS:
-
-| Requisito | Status Atual | Ação Necessária |
-|-----------|-------------|-----------------|
-| Login via CPF | Login via email | Refatorar autenticação |
-| Campos CPF/CNPJ | Não existe | Adicionar ao schema |
-| Tipo contrato (CLT/PJ) | Não existe | Adicionar enum e campo |
-| Tipo pagamento (Horista/Fixo) | Não existe | Adicionar enum e campo |
-| Horário de trabalho | Não existe | Adicionar campo |
-| PIN 4 dígitos hashado | PIN texto plano 4-6 | Ajustar para 4 fixo + hash |
-| Email citext + unique | varchar sem constraint | Adicionar extensão e constraint |
-| Telefone 11 dígitos | Sem validação | Adicionar CHECK + validação frontend |
-| Múltiplos departamentos | 1:N (um dept por emp) | Criar tabela N:N |
-| Roles expandidos | 4 roles atuais | Expandir enum |
-| Regras de horas CLT/PJ/Horista | Não implementado | Criar lógica de cálculo |
-| LGPD consent | Não existe | Adicionar flag + UI |
-| Offline time clock | Sem suporte | Implementar com localStorage |
-| Ajustes de ponto | Não existe | Criar módulo completo |
-| Atestados médicos | Não existe | Criar upload + workflow |
-| Bloquear DELETE físico | Apenas soft delete no código | Adicionar trigger no DB |
+### O que precisa ser implementado:
+1. Campo `must_change_password` na tabela employees
+2. Campos de senha no formulario de cadastro
+3. Edge function para criar employee + auth user na ordem correta
+4. Tela de troca obrigatoria de senha
+5. Guard de rota para bloquear acesso sem trocar senha
+6. Tela de alteracao de senha para usuario
+7. Funcionalidade de reset de senha pelo RH
 
 ---
 
-## Fase 1: Migrações de Banco de Dados
+## Fase 1: Migracao de Banco de Dados
 
-### 1.1 Habilitar citext e adicionar constraints de email
-
-```sql
--- Habilitar extensão citext
-CREATE EXTENSION IF NOT EXISTS citext;
-
--- Alterar coluna email para citext e adicionar UNIQUE
-ALTER TABLE public.employees 
-  ALTER COLUMN email TYPE citext;
-
-ALTER TABLE public.employees 
-  ADD CONSTRAINT employees_email_unique UNIQUE (email);
-```
-
-### 1.2 Adicionar novos campos à tabela employees
+### 1.1 Adicionar campo `must_change_password`
 
 ```sql
--- Adicionar novos campos
 ALTER TABLE public.employees
-  ADD COLUMN cpf_cnpj VARCHAR(18),
-  ADD COLUMN document_type VARCHAR(4) DEFAULT 'cpf' CHECK (document_type IN ('cpf', 'cnpj')),
-  ADD COLUMN contract_type VARCHAR(10) DEFAULT 'clt' CHECK (contract_type IN ('clt', 'pj')),
-  ADD COLUMN payment_type VARCHAR(10) DEFAULT 'fixed' CHECK (payment_type IN ('hourly', 'fixed')),
-  ADD COLUMN work_schedule TEXT,
-  ADD COLUMN lgpd_consent BOOLEAN DEFAULT FALSE,
-  ADD COLUMN lgpd_consent_at TIMESTAMPTZ,
-  ADD COLUMN biometry_consent BOOLEAN DEFAULT FALSE,
-  ADD COLUMN biometry_consent_at TIMESTAMPTZ,
-  ADD COLUMN pin_hash VARCHAR(255);
+  ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT TRUE;
 
--- Constraint para CPF/CNPJ único
-ALTER TABLE public.employees 
-  ADD CONSTRAINT employees_cpf_cnpj_unique UNIQUE (cpf_cnpj);
+-- Atualizar registros existentes que ja trocaram senha
+UPDATE public.employees 
+SET must_change_password = FALSE 
+WHERE password_changed = TRUE;
 
--- Constraint para telefone (11 dígitos)
-ALTER TABLE public.employees 
-  ADD CONSTRAINT employees_phone_format 
-  CHECK (phone IS NULL OR phone ~ '^\d{11}$');
-```
-
-### 1.3 Criar tabela N:N para múltiplos departamentos
-
-```sql
-CREATE TABLE public.employee_departments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
-  department_id UUID NOT NULL REFERENCES public.departments(id) ON DELETE CASCADE,
-  is_primary BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(employee_id, department_id)
-);
-
-ALTER TABLE public.employee_departments ENABLE ROW LEVEL SECURITY;
-
--- RLS policies
-CREATE POLICY "Authenticated can view employee_departments"
-  ON public.employee_departments FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "Admin/RH can manage employee_departments"
-  ON public.employee_departments FOR ALL
-  USING (has_admin_access(auth.uid()));
-```
-
-### 1.4 Expandir roles para novos perfis
-
-```sql
--- Adicionar novos valores ao enum (PostgreSQL não permite remover, apenas adicionar)
-ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'diretoria';
-ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'dp';
-ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'financeiro';
-ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'infraestrutura';
-ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'desenvolvimento';
-ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'suporte';
-ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'mesa_analise';
-```
-
-### 1.5 Criar módulo de ajustes de ponto
-
-```sql
--- Enum para status de ajuste
-CREATE TYPE public.adjustment_status AS ENUM ('pending', 'approved', 'rejected');
-
--- Tabela de ajustes de ponto
-CREATE TABLE public.time_adjustments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  employee_id UUID NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
-  record_date DATE NOT NULL,
-  original_time TIMESTAMPTZ,
-  requested_time TIMESTAMPTZ NOT NULL,
-  record_type time_record_type NOT NULL,
-  justification TEXT NOT NULL,
-  attachment_url TEXT,
-  status adjustment_status NOT NULL DEFAULT 'pending',
-  requested_by UUID NOT NULL,
-  reviewed_by UUID,
-  reviewed_at TIMESTAMPTZ,
-  review_notes TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-ALTER TABLE public.time_adjustments ENABLE ROW LEVEL SECURITY;
-```
-
-### 1.6 Bloquear DELETE físico no banco
-
-```sql
--- Trigger para IMPEDIR DELETE físico em employees
-CREATE OR REPLACE FUNCTION public.prevent_employee_delete()
-RETURNS TRIGGER AS $$
-BEGIN
-  RAISE EXCEPTION 'DELETE não permitido na tabela employees. Use soft delete (status = terminated).';
-  RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER employees_prevent_delete
-  BEFORE DELETE ON public.employees
-  FOR EACH ROW
-  EXECUTE FUNCTION public.prevent_employee_delete();
+-- Comentario para documentacao
+COMMENT ON COLUMN public.employees.must_change_password IS 
+  'Flag que indica se o colaborador deve trocar a senha no proximo login';
 ```
 
 ---
 
-## Fase 2: Refatorar Autenticação para CPF
+## Fase 2: Edge Function para Criar Colaborador
 
-### 2.1 Modificar AuthContext
+### 2.1 Criar `supabase/functions/create-employee/index.ts`
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/contexts/AuthContext.tsx` | Alterar signIn para aceitar CPF, converter para email interno |
+Esta function garante a ordem correta de criacao:
+1. Criar registro em `employees` (sem user_id)
+2. Criar usuario em `auth.users` com service role
+3. Atualizar `employees.user_id` com o ID do auth user
+4. Adicionar role padrao em `user_roles`
 
-### Lógica de autenticação por CPF:
+**Fluxo de rollback logico:**
+- Se falhar ao criar auth user: manter employee sem user_id
+- Se falhar ao vincular: log de erro, employee fica sem acesso
 
 ```text
-1. Usuário digita CPF + senha
-2. Sistema busca na tabela employees o email associado ao CPF
-3. Usa o email para autenticar no Supabase Auth
-4. Mantém compatibilidade com sistema existente
+Parametros aceitos:
+- first_name, last_name, email, cpf_cnpj
+- password (senha inicial)
+- pin, phone, department_id, etc
+- role (default: 'user')
+
+Resposta:
+- employee_id
+- user_id
+- credentials (email, cpf para login)
 ```
-
-### 2.2 Atualizar página de Login
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/pages/auth/Login.tsx` | Trocar campo email por CPF com máscara |
-| | Adicionar validação de formato CPF |
-| | Renomear labels e placeholders |
 
 ---
 
-## Fase 3: Atualizar Formulário de Colaboradores
+## Fase 3: Atualizar Formulario de Colaborador
 
-### 3.1 Modificar FormularioColaborador
-
-| Campo Novo | Validação | Máscara |
-|------------|-----------|---------|
-| CPF/CNPJ | Algoritmo validador | 000.000.000-00 ou 00.000.000/0000-00 |
-| Tipo documento | Radio CPF/CNPJ | - |
-| Tipo contrato | Select CLT/PJ | - |
-| Tipo pagamento | Select Horista/Fixo | - |
-| Horário de trabalho | Texto | - |
-| Telefone | 11 dígitos obrigatórios | (00) 00000-0000 |
-| PIN | Exatamente 4 dígitos | 0000 (mascarado após salvar) |
-
-### 3.2 Implementar hash do PIN
+### 3.1 Adicionar campos de senha no schema Zod
 
 ```typescript
-// Usar bcrypt ou argon2 para hash do PIN antes de salvar
-// No edge function tablet-time-clock, comparar hash
+// Novos campos no formSchema
+initial_password: z.string()
+  .min(8, 'Senha deve ter no minimo 8 caracteres')
+  .regex(/[A-Z]/, 'Senha deve conter letra maiuscula')
+  .regex(/[0-9]/, 'Senha deve conter numero')
+  .optional()
+  .or(z.literal('')),
+
+confirm_password: z.string().optional().or(z.literal('')),
+
+// Refinement para validar confirmacao
+.refine((data) => {
+  if (data.initial_password && data.confirm_password) {
+    return data.initial_password === data.confirm_password;
+  }
+  return true;
+}, {
+  message: 'Senhas nao conferem',
+  path: ['confirm_password'],
+});
 ```
 
----
-
-## Fase 4: Implementar Consentimento LGPD
-
-### 4.1 Criar componente de Termos
-
-| Arquivo Novo | Descrição |
-|--------------|-----------|
-| `src/components/auth/TermosLGPD.tsx` | Modal com termos e checkboxes |
-| `src/pages/auth/ConsentimentoLGPD.tsx` | Página de consentimento pós-login |
-
-### 4.2 Fluxo de consentimento
+### 3.2 Adicionar Card de Credenciais no formulario
 
 ```text
-1. Usuário faz login
-2. Se lgpd_consent = false, redireciona para /consentimento
-3. Usuário lê termos e marca checkboxes
-4. Sistema atualiza employees com lgpd_consent = true e timestamp
-5. Usuário pode acessar o sistema
+Card "Credenciais de Acesso" (apenas para novo colaborador):
++----------------------------------+
+| Senha Inicial *                  |
+| [**********] [eye icon]          |
+| Minimo 8 caracteres, 1 maiuscula |
++----------------------------------+
+| Confirmar Senha *                |
+| [**********] [eye icon]          |
++----------------------------------+
+| [!] Aviso: Esta e uma senha      |
+| temporaria. O colaborador sera   |
+| obrigado a troca-la no primeiro  |
+| acesso ao sistema.               |
++----------------------------------+
+```
+
+### 3.3 Modificar `useCreateEmployee` hook
+
+```typescript
+// Chamar edge function em vez de insert direto
+const response = await supabase.functions.invoke('create-employee', {
+  body: {
+    ...employeeData,
+    password: data.initial_password,
+    role: 'user'
+  }
+});
 ```
 
 ---
 
-## Fase 5: Regras de Cálculo de Horas
+## Fase 4: Verificacao de Primeiro Acesso
 
-### 5.1 Criar serviço de cálculo
+### 4.1 Criar hook `usePasswordCheck`
 
-| Arquivo Novo | Descrição |
-|--------------|-----------|
-| `src/services/hoursCalculation.ts` | Lógica centralizada de cálculo |
+```typescript
+// src/hooks/usePasswordCheck.ts
+export function usePasswordCheck() {
+  const { user } = useAuth();
+  
+  const { data: mustChangePassword, isLoading } = useQuery({
+    queryKey: ['password-check', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('employees')
+        .select('must_change_password')
+        .eq('user_id', user?.id)
+        .maybeSingle();
+      
+      return data?.must_change_password ?? false;
+    },
+    enabled: !!user,
+  });
+  
+  return { mustChangePassword, isLoading };
+}
+```
 
-### Regras implementadas:
+### 4.2 Modificar `ProtectedRoute`
+
+```typescript
+export function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const { user, loading: authLoading } = useAuth();
+  const { mustChangePassword, isLoading: checkLoading } = usePasswordCheck();
+  const location = useLocation();
+  
+  if (authLoading || checkLoading) {
+    return <LoadingSpinner />;
+  }
+  
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  // Bloquear acesso se deve trocar senha (exceto pagina de troca)
+  if (mustChangePassword && location.pathname !== '/trocar-senha') {
+    return <Navigate to="/trocar-senha" replace />;
+  }
+  
+  return <>{children}</>;
+}
+```
+
+---
+
+## Fase 5: Tela de Troca Obrigatoria de Senha
+
+### 5.1 Criar `src/pages/auth/TrocarSenha.tsx`
 
 ```text
-CLT:
-- Jornada padrão: 8h
-- Hora extra: após 11 minutos excedidos
-- Atrasos: geram horas negativas
-- Banco de horas quadrimestral
+Layout da pagina:
++----------------------------------------+
+|            [Logo FMS]                  |
+|                                        |
+|   Troca de Senha Obrigatoria           |
+|   Por seguranca, voce deve alterar     |
+|   sua senha no primeiro acesso.        |
+|                                        |
+| +------------------------------------+ |
+| | Nova Senha *                       | |
+| | [**********] [eye]                 | |
+| | Min 8 chars, 1 maiuscula, 1 numero | |
+| +------------------------------------+ |
+| | Confirmar Nova Senha *             | |
+| | [**********] [eye]                 | |
+| +------------------------------------+ |
+|                                        |
+|      [Alterar Senha e Continuar]       |
++----------------------------------------+
+```
 
-HORISTA:
-- Qualquer minuto extra = hora positiva
-- Nunca gera hora negativa
+### 5.2 Logica de troca
 
-PJ:
-- Apenas registro de presença
-- Sem horas extras
+```typescript
+const handleSubmit = async (values) => {
+  // 1. Atualizar senha no Supabase Auth
+  const { error: authError } = await supabase.auth.updateUser({
+    password: values.new_password
+  });
+  
+  if (authError) throw authError;
+  
+  // 2. Atualizar flags no employee
+  const { error: empError } = await supabase
+    .from('employees')
+    .update({
+      must_change_password: false,
+      password_changed: true,
+      password_changed_at: new Date().toISOString()
+    })
+    .eq('user_id', user.id);
+  
+  if (empError) throw empError;
+  
+  // 3. Redirecionar para dashboard
+  navigate('/dashboard');
+};
 ```
 
 ---
 
-## Fase 6: Módulo de Ajustes e Atestados
+## Fase 6: Alteracao de Senha pelo Usuario
 
-### 6.1 Criar páginas e componentes
+### 6.1 Criar `src/pages/configuracoes/AlterarSenha.tsx`
 
-| Arquivo | Descrição |
-|---------|-----------|
-| `src/pages/rh/SolicitarAjuste.tsx` | Formulário para solicitar ajuste |
-| `src/pages/rh/GerenciarAjustes.tsx` | Lista de ajustes para RH/DP aprovar |
-| `src/hooks/useTimeAdjustments.ts` | CRUD de ajustes |
-| `src/components/rh/UploadAtestado.tsx` | Upload de atestado médico |
+```text
+Pagina acessivel via menu do usuario:
++----------------------------------------+
+|   Alterar Minha Senha                  |
+|                                        |
+| +------------------------------------+ |
+| | Senha Atual *                      | |
+| | [**********] [eye]                 | |
+| +------------------------------------+ |
+| | Nova Senha *                       | |
+| | [**********] [eye]                 | |
+| +------------------------------------+ |
+| | Confirmar Nova Senha *             | |
+| | [**********] [eye]                 | |
+| +------------------------------------+ |
+|                                        |
+|   [Cancelar]      [Salvar]             |
++----------------------------------------+
+```
 
-### 6.2 Storage para atestados
+### 6.2 Validacao de senha atual
+
+```typescript
+// Verificar senha atual antes de permitir troca
+const { error } = await supabase.auth.signInWithPassword({
+  email: user.email,
+  password: currentPassword
+});
+
+if (error) {
+  setError('current_password', { message: 'Senha atual incorreta' });
+  return;
+}
+```
+
+---
+
+## Fase 7: Reset de Senha pelo RH
+
+### 7.1 Criar `src/components/rh/ResetSenhaModal.tsx`
+
+```text
+Modal acionado pelo RH na listagem de colaboradores:
++----------------------------------------+
+|   Resetar Senha - [Nome Colaborador]   |
+|                                        |
+| +------------------------------------+ |
+| | Nova Senha Temporaria *            | |
+| | [**********] [eye] [gerar]         | |
+| +------------------------------------+ |
+| | Confirmar Senha *                  | |
+| | [**********] [eye]                 | |
+| +------------------------------------+ |
+|                                        |
+| [!] O colaborador sera obrigado a      |
+| trocar esta senha no proximo login.    |
+|                                        |
+|   [Cancelar]      [Resetar Senha]      |
++----------------------------------------+
+```
+
+### 7.2 Edge function para reset
+
+```typescript
+// supabase/functions/reset-employee-password/index.ts
+// Usa service role para atualizar senha no auth.users
+// E atualiza must_change_password = true no employee
+```
+
+---
+
+## Fase 8: RLS e Seguranca
+
+### 8.1 Proteger campo `user_id`
 
 ```sql
--- Criar bucket para atestados
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('medical-certificates', 'medical-certificates', false);
+-- Apenas service role pode alterar user_id
+-- RLS ja impede usuarios comuns de UPDATE em employees
+-- Mas adicionar verificacao extra na edge function
 ```
 
----
-
-## Fase 7: Suporte Offline para Tablet
-
-### 7.1 Implementar service worker
-
-| Arquivo | Descrição |
-|---------|-----------|
-| `src/pages/tablet/PontoTablet.tsx` | Adicionar lógica de offline |
-| `public/sw.js` | Service worker para cache |
-
-### Lógica offline:
+### 8.2 Verificacoes de permissao
 
 ```text
-1. Detectar se está offline
-2. Salvar registro no localStorage
-3. Quando voltar online, sincronizar com Supabase
-4. Exibir indicador visual de pendências
+Usuario comum:
+- Pode alterar apenas propria senha via Supabase Auth
+- Nao pode acessar initial_password de outros
+
+RH/Admin:
+- Pode resetar senha via edge function
+- Pode ver status must_change_password
+- Nao ve senha atual de ninguem (armazenada no Auth)
 ```
 
 ---
 
 ## Resumo de Arquivos
 
-### Novos arquivos a criar:
-- `src/services/hoursCalculation.ts`
-- `src/components/auth/TermosLGPD.tsx`
-- `src/pages/auth/ConsentimentoLGPD.tsx`
-- `src/pages/rh/SolicitarAjuste.tsx`
-- `src/pages/rh/GerenciarAjustes.tsx`
-- `src/hooks/useTimeAdjustments.ts`
-- `src/components/rh/UploadAtestado.tsx`
-- `src/utils/cpfValidator.ts`
-- `src/utils/pinHash.ts`
+### Novos arquivos:
+| Arquivo | Descricao |
+|---------|-----------|
+| `supabase/functions/create-employee/index.ts` | Criar employee + auth user |
+| `supabase/functions/reset-employee-password/index.ts` | Reset senha pelo RH |
+| `src/pages/auth/TrocarSenha.tsx` | Tela de troca obrigatoria |
+| `src/pages/configuracoes/AlterarSenha.tsx` | Tela de alteracao de senha |
+| `src/hooks/usePasswordCheck.ts` | Hook para verificar must_change_password |
+| `src/components/rh/ResetSenhaModal.tsx` | Modal de reset pelo RH |
 
-### Arquivos a modificar:
-- `src/contexts/AuthContext.tsx` - Login por CPF
-- `src/pages/auth/Login.tsx` - UI para CPF
-- `src/components/rh/FormularioColaborador.tsx` - Novos campos
-- `src/types/database.ts` - Novas interfaces
-- `src/hooks/useEmployees.ts` - Hash de PIN
-- `src/pages/tablet/PontoTablet.tsx` - Suporte offline
-- `supabase/functions/tablet-time-clock/index.ts` - Comparar hash PIN
+### Arquivos modificados:
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/components/rh/FormularioColaborador.tsx` | Adicionar campos de senha |
+| `src/hooks/useEmployees.ts` | Usar edge function para criar |
+| `src/components/auth/ProtectedRoute.tsx` | Verificar must_change_password |
+| `src/types/database.ts` | Adicionar must_change_password |
+| `src/App.tsx` | Adicionar rota /trocar-senha |
 
-### Migrações SQL necessárias:
-1. Extensão citext + constraint email
-2. Novos campos employees
-3. Tabela employee_departments
-4. Expandir enum app_role
-5. Tabela time_adjustments
-6. Trigger prevent_employee_delete
-7. Bucket medical-certificates
+### Migracoes SQL:
+| Migracao | Descricao |
+|----------|-----------|
+| `add_must_change_password.sql` | Campo must_change_password |
 
 ---
 
-## Ordem de Implementação Recomendada
+## Ordem de Implementacao
 
-1. **Migrações de banco** (Fase 1) - Base para tudo
-2. **Formulário colaboradores** (Fase 3) - Novos campos
-3. **LGPD consent** (Fase 4) - Segurança/compliance
-4. **Autenticação CPF** (Fase 2) - Requisito crítico
-5. **Cálculo de horas** (Fase 5) - Regras de negócio
-6. **Ajustes/Atestados** (Fase 6) - Funcionalidade RH
-7. **Offline tablet** (Fase 7) - Nice to have
+1. **Migracao DB** - Adicionar campo must_change_password
+2. **Edge function create-employee** - Garantir ordem correta
+3. **Formulario colaborador** - Campos de senha
+4. **Hook usePasswordCheck** - Verificacao de primeiro acesso
+5. **ProtectedRoute** - Guard de rota
+6. **Tela TrocarSenha** - Troca obrigatoria
+7. **Tela AlterarSenha** - Usuario altera propria senha
+8. **Edge function reset-password** - RH reseta senha
+9. **Modal ResetSenha** - UI para RH
 
 ---
 
-## Considerações de Segurança
+## Consideracoes de Seguranca
 
-- PIN será hashado com bcrypt antes de salvar
-- DELETE físico bloqueado no banco por trigger
-- RLS ativo em todas as tabelas sensíveis
-- Consentimento LGPD obrigatório para acesso
-- Atestados em bucket privado com RLS
-- Validação de CPF/email em frontend, backend E banco
+- Senhas NUNCA armazenadas fora do Supabase Auth
+- `initial_password` armazena apenas para referencia do RH (opcional remover)
+- Edge functions usam service role para operacoes privilegiadas
+- RLS impede usuarios de modificar dados de outros
+- Guard de rota impede bypass por URL
+- Validacao de senha atual antes de permitir alteracao
