@@ -1,180 +1,214 @@
 
-# SGE - Sistema de Gerenciamento Empresarial Total
+# Plano: Implementação de Soft Delete com Auditoria
 
-## Visão Geral
-Sistema ERP corporativo completo para empresa média (10-50 usuários), com design corporativo clássico, autenticação por email/senha e sistema de permissões granulares por módulo.
+## Resumo
 
----
+Transformar todas as operações de "excluir" no sistema para apenas **inativar** os registros (soft delete), mantendo os dados no banco e permitindo visualização através de filtros de status.
 
-## Fase 1: Fundação e Autenticação
-**Base estrutural do sistema**
+## Contexto Atual
 
-### Autenticação e Segurança
-- **Tela de Login** com email/senha e recuperação de senha
-- **Tela de Cadastro** para novos usuários (controlado por admin)
-- Sistema de **permissões granulares** com tabela de roles separada
-- Controle de acesso por módulo (Visualizar, Criar, Editar, Excluir)
+- **Colaboradores**: Usam `DELETE` físico no banco (`useDeleteEmployee`)
+- **Férias**: Usam `DELETE` físico no banco (`useDeleteVacation`)
+- **Status dos colaboradores**: Já existe enum `'active' | 'on_leave' | 'terminated'`
+- **Férias**: Já possuem `cancelled` como status válido
+- **Audit Log**: Não existe tabela de auditoria
 
-### Estrutura Visual
-- **Layout Principal** com barra lateral de navegação colapsável
-- **Cabeçalho** com nome do usuário, notificações e logout
-- **Design corporativo** em tons de azul/cinza profissional
-- **Responsivo** para desktop e tablet
+## Arquitetura Proposta
 
-### Componentes Base
-- **TabelaDados**: Tabela genérica com paginação, filtros e ordenação
-- **FormularioGenerico**: Formulários dinâmicos para CRUD
-- **CardEstatistica**: Cards para métricas e KPIs
-- **ModalConfirmacao**: Diálogos de confirmação de ações
+```text
++-------------------+       +-------------------+
+|   Botão Excluir   |  -->  |  UPDATE status    |
+|   (Frontend)      |       |  + Audit Log      |
++-------------------+       +-------------------+
+                                    |
+                                    v
+                    +-------------------------------+
+                    |   Registro permanece no DB    |
+                    |   status = 'terminated'       |
+                    +-------------------------------+
+```
 
----
+## Alterações Necessárias
 
-## Fase 2: Módulo de RH (Prioridade Principal)
+### 1. Banco de Dados (Migração SQL)
 
-### Gestão de Colaboradores
-- **Listagem** com busca por nome, departamento, cargo
-- **Cadastro completo**: dados pessoais, cargo, departamento, salário, data de admissão
-- **Perfil do colaborador** com histórico e documentos
-- **Status**: Ativo, Afastado, Desligado
+**Criar tabela `audit_logs`**:
+- `id` (UUID)
+- `entity_type` (varchar) - ex: 'employee', 'vacation'
+- `entity_id` (UUID) - ID do registro afetado
+- `action` (varchar) - 'soft_delete', 'reactivate', etc.
+- `previous_status` (varchar)
+- `new_status` (varchar)
+- `performed_by` (UUID) - ID do usuário que realizou ação
+- `performed_at` (timestamp)
+- `notes` (text) - observações adicionais
 
-### Gestão de Férias
-- **Solicitação de férias** pelo colaborador
-- **Fluxo de aprovação** pelo gestor
-- **Calendário visual** mostrando férias da equipe
-- **Saldo de férias** automático
+**RLS para audit_logs**:
+- Admin/RH podem visualizar todos os logs
+- Usuários comuns podem ver apenas seus próprios logs
 
-### Registro de Ponto
-- **Marcação de ponto** (entrada/saída/almoço)
-- **Relatório de horas** por colaborador e período
-- **Alertas** de inconsistências (horas extras, faltas)
-- **Visualização em cronograma** semanal/mensal
+### 2. Types (`src/types/database.ts`)
 
----
+| Alteração | Descrição |
+|-----------|-----------|
+| Adicionar `AuditLog` interface | Nova interface para logs de auditoria |
 
-## Fase 3: Módulo Financeiro
+### 3. Hooks
 
-### Contas a Pagar
-- Cadastro de despesas e fornecedores
-- Controle de vencimentos e pagamentos
-- Status: Pendente, Pago, Atrasado, Cancelado
-- Alertas de vencimento próximo
+**`src/hooks/useEmployees.ts`**:
+| Função | Alteração |
+|--------|-----------|
+| `useDeleteEmployee` | Renomear para `useDeactivateEmployee` internamente, mas manter export com nome antigo para compatibilidade |
+| Lógica | Trocar `DELETE` por `UPDATE status = 'terminated'` |
+| Novo | Adicionar insert na tabela `audit_logs` |
+| Toast | Alterar mensagem para "Colaborador inativado" |
 
-### Contas a Receber
-- Registro de receitas e clientes
-- Controle de recebimentos
-- Geração de boletos/faturas (integração futura)
+**`src/hooks/useVacations.ts`**:
+| Função | Alteração |
+|--------|-----------|
+| `useDeleteVacation` | Trocar `DELETE` por `UPDATE status = 'cancelled'` |
+| Novo | Adicionar insert na tabela `audit_logs` |
+| Toast | Alterar mensagem para "Solicitação cancelada" |
 
-### Fluxo de Caixa
-- Dashboard visual com gráficos de entradas/saídas
-- Projeção de fluxo de caixa futuro
-- Saldo atual e histórico
+**`src/hooks/useAuditLogs.ts`** (novo):
+| Função | Descrição |
+|--------|-----------|
+| `useAuditLogs` | Listar logs de auditoria com filtros |
+| `useCreateAuditLog` | Inserir novo log (uso interno) |
 
----
+### 4. Páginas
 
-## Fase 4: Módulo de Desenvolvimento
+**`src/pages/rh/Colaboradores.tsx`**:
+| Alteração | Descrição |
+|-----------|-----------|
+| Filtro padrão | Alterar estado inicial de `status` de `'all'` para `'active'` |
+| Modal de confirmação | Alterar texto para "Este registro será inativado e poderá ser visualizado no filtro de inativos" |
+| Botão Editar | Desabilitar para registros com status `terminated` |
+| Novo filtro | Adicionar opção "Inativo" no Select de status (já existe como "Desligado") |
 
-### Gestão de Projetos
-- Cadastro de projetos com cronograma
-- Alocação de equipe por projeto
-- Status e progresso do projeto
-- Timeline de entregas
+**`src/pages/rh/Ferias.tsx`**:
+| Alteração | Descrição |
+|-----------|-----------|
+| Modal de exclusão | Alterar texto para indicar cancelamento |
+| Feedback | Alterar mensagem de sucesso |
 
-### Kanban de Tarefas
-- Quadro visual arrastar-e-soltar
-- Colunas: A Fazer, Em Andamento, Revisão, Concluído
-- Atribuição de responsáveis e prazos
-- Priorização e etiquetas
+### 5. Reativação de Registros
 
----
+**Novo hook `useReactivateEmployee`**:
+- Apenas Admin/RH podem reativar
+- Muda status de `terminated` para `active`
+- Registra no audit log
 
-## Fase 5: Módulo de Suporte
+**UI para reativação**:
+- Adicionar botão "Reativar" no dropdown de ações
+- Visível apenas para registros inativos
+- Apenas para usuários com permissão
 
-### Sistema de Chamados
-- Abertura de chamados com categoria e prioridade
-- Atribuição automática ou manual
-- Histórico de interações
-- SLA e métricas de atendimento
+## Fluxo de Soft Delete
 
-### Base de Conhecimento
-- Artigos organizados por categoria
-- Busca textual
-- FAQ com perguntas frequentes
+```text
+1. Usuário clica "Excluir"
+2. Modal exibe: "Este registro será inativado..."
+3. Usuário confirma
+4. Sistema executa:
+   a. Busca status atual do registro
+   b. UPDATE status = 'terminated' (ou 'cancelled' para férias)
+   c. INSERT audit_log com detalhes
+5. Query é invalidada
+6. Registro some da listagem (filtro padrão = active)
+7. Toast: "Colaborador inativado com sucesso"
+```
 
----
+## Arquivos a Criar/Modificar
 
-## Fase 6: Módulo Comercial
+| Arquivo | Ação |
+|---------|------|
+| `supabase/migrations/XXX_audit_logs.sql` | Criar |
+| `src/types/database.ts` | Modificar |
+| `src/hooks/useEmployees.ts` | Modificar |
+| `src/hooks/useVacations.ts` | Modificar |
+| `src/hooks/useAuditLogs.ts` | Criar |
+| `src/pages/rh/Colaboradores.tsx` | Modificar |
+| `src/pages/rh/Ferias.tsx` | Modificar |
 
-### CRM e Leads
-- Cadastro de leads com origem e status
-- Pipeline de vendas visual
-- Histórico de contatos e interações
-- Conversão de lead para cliente
+## Detalhes Técnicos
 
-### Vendas
-- Registro de vendas com produtos/serviços
-- Acompanhamento de metas
-- Comissões (se aplicável)
+### Migração SQL para audit_logs
 
----
+```sql
+CREATE TABLE public.audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  entity_type VARCHAR NOT NULL,
+  entity_id UUID NOT NULL,
+  action VARCHAR NOT NULL,
+  previous_status VARCHAR,
+  new_status VARCHAR,
+  performed_by UUID NOT NULL,
+  performed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-## Fase 7: Análise e Diretoria
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
-### Dashboards Personalizados
-- Criação de painéis customizáveis
-- Gráficos de diferentes tipos (barras, linhas, pizza)
-- Filtros por período e departamento
+-- Admin/RH podem ver todos os logs
+CREATE POLICY "Admin/RH can view all audit_logs"
+  ON public.audit_logs FOR SELECT
+  USING (has_admin_access(auth.uid()));
 
-### KPIs Estratégicos
-- Indicadores-chave por módulo
-- Comparativo com metas
-- Tendências e alertas
+-- Usuários podem ver logs de suas próprias ações
+CREATE POLICY "Users can view own audit_logs"
+  ON public.audit_logs FOR SELECT
+  USING (auth.uid() = performed_by);
 
-### Aprovações
-- Fluxo de aprovações centralizado
-- Histórico de decisões
-- Delegação de aprovação
+-- Admin/RH podem inserir logs
+CREATE POLICY "Admin/RH can insert audit_logs"
+  ON public.audit_logs FOR INSERT
+  WITH CHECK (has_admin_access(auth.uid()));
+```
 
----
+### Lógica de useDeactivateEmployee
 
-## Fase 8: Configurações e Administração
+```typescript
+// Pseudocódigo
+async function deactivateEmployee(id: string) {
+  // 1. Buscar status atual
+  const { data: current } = await supabase
+    .from('employees')
+    .select('status')
+    .eq('id', id)
+    .single();
 
-### Gestão de Usuários e Permissões
-- Cadastro de usuários do sistema
-- Definição de perfis de acesso por módulo
-- Matriz de permissões (Visualizar/Criar/Editar/Excluir)
+  // 2. Atualizar para inativo
+  await supabase
+    .from('employees')
+    .update({ status: 'terminated' })
+    .eq('id', id);
 
-### Configurações Gerais
-- Dados da empresa
-- Departamentos e cargos
-- Parâmetros do sistema
+  // 3. Registrar auditoria
+  await supabase.from('audit_logs').insert({
+    entity_type: 'employee',
+    entity_id: id,
+    action: 'soft_delete',
+    previous_status: current.status,
+    new_status: 'terminated',
+    performed_by: user.id,
+  });
+}
+```
 
-### Log de Auditoria
-- Registro automático de todas as ações
-- Filtros por usuário, data, ação
-- Rastreabilidade completa
+## Segurança
 
----
+- Registros inativos não podem ser editados por usuários comuns
+- Reativação apenas por Admin/RH
+- Todas as ações são registradas no audit log
+- RLS garante que apenas usuários autorizados vejam logs
 
-## Backend (Supabase/Lovable Cloud)
+## Resultado Esperado
 
-### Banco de Dados
-- 18 tabelas com relacionamentos adequados
-- RLS (Row Level Security) em todas as tabelas sensíveis
-- Políticas de acesso por departamento e permissão
-
-### Edge Functions
-- Relatórios financeiros complexos
-- Notificações de chamados
-- Validação de permissões avançada
-
----
-
-## Ordem de Implementação Sugerida
-1. **Fundação**: Layout, autenticação, permissões (base para tudo)
-2. **RH**: Colaboradores, férias, ponto (sua prioridade)
-3. **Financeiro**: Contas, fluxo de caixa
-4. **Desenvolvimento**: Projetos e Kanban
-5. **Suporte**: Chamados e base de conhecimento
-6. **Comercial**: Leads, CRM, vendas
-7. **Diretoria**: Dashboards, KPIs, aprovações
-8. **Configurações**: Usuários, permissões, auditoria
+1. Nenhum registro será fisicamente excluído do banco
+2. Registros "excluídos" terão status `terminated` (colaboradores) ou `cancelled` (férias)
+3. Listagem padrão mostra apenas registros ativos
+4. Filtro permite visualizar registros inativos
+5. Todas as ações são auditadas
+6. Apenas Admin/RH podem reativar registros
