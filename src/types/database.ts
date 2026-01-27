@@ -56,6 +56,8 @@ export interface Employee {
   status: EmployeeStatus;
   address: string | null;
   notes: string | null;
+  pin: string | null;
+  photo_url: string | null;
   created_at: string;
   updated_at: string;
   // Joined fields
@@ -112,4 +114,5 @@ export interface EmployeeFormData {
   status: EmployeeStatus;
   address?: string;
   notes?: string;
+  pin?: string;
 }
