@@ -151,7 +151,7 @@ export default function Login() {
               </Button>
               <div className="text-center text-sm text-muted-foreground">
                 <Link to="/recuperar-senha" className="hover:text-primary hover:underline">
-                  Esqueceu sua senha?
+                  Esqueceu sua senha?????????
                 </Link>
               </div>
             </CardFooter>
