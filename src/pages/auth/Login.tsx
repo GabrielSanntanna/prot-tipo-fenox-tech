@@ -161,6 +161,7 @@ export default function Login() {
         {/* Footer */}
         <div className="mt-10 border-t pt-6 text-center text-xs text-muted-foreground">
             © 2026 - Fenox Tecnologia. Todos os direitos reservados.
+            Aloha
         </div>
       </div>
     </div>
