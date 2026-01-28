@@ -81,8 +81,8 @@ export default function Login() {
           <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-primary">
             <Building2 className="h-10 w-10 text-primary-foreground" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">FMS</h1>
-          <p className="text-sm text-muted-foreground">Fenox Management System</p>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">FNX</h1>
+          <p className="text-sm text-muted-foreground">Fenox Tecnologia</p>
         </div>
 
         {/* Configuration warning */}
@@ -159,9 +159,9 @@ export default function Login() {
         </Card>
 
         {/* Footer */}
-        <p className="text-center text-xs text-muted-foreground">
-          © 2024 FMS - Fenox Management System
-        </p>
+        <div className="mt-10 border-t pt-6 text-center text-xs text-muted-foreground">
+            © 2026 - Fenox Tecnologia. Todos os direitos reservados.
+        </div>
       </div>
     </div>
   );
