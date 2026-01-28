@@ -79,7 +79,7 @@ export default function Login() {
         {/* Logo */}
         <div className="flex flex-col items-center space-y-2">
           <div className="flex h-16 w-16 items-center justify-center rounded-lg bg-primary">
-            <Building2 className="h-10 w-10 text-primary-foreground" />
+            <img src="/logo.png" alt=""/>
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">FNX</h1>
           <p className="text-sm text-muted-foreground">Fenox Tecnologia</p>
@@ -161,8 +161,13 @@ export default function Login() {
         {/* Footer */}
         <div className="mt-10 border-t pt-6 text-center text-xs text-muted-foreground">
             © 2026 - Fenox Tecnologia. Todos os direitos reservados.
+            Aloha
         </div>
-        
+        <div>
+          <h4 className="font-semibold mb-4">Contato</h4>
+          <p className="text-sm text-muted-foreground">CNPJ: 00.000.000/0001-00</p>
+          <p className="text-sm text-muted-foreground">suporte@fenox.com.br</p>
+        </div>
       </div>
     </div>
   );
