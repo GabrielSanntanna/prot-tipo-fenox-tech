@@ -151,7 +151,7 @@ export default function Login() {
               </Button>
               <div className="text-center text-sm text-muted-foreground">
                 <Link to="/recuperar-senha" className="hover:text-primary hover:underline">
-                  Esqueceu sua senha?????????
+                  Esqueceu sua senha?
                 </Link>
               </div>
             </CardFooter>
@@ -161,7 +161,12 @@ export default function Login() {
         {/* Footer */}
         <div className="mt-10 border-t pt-6 text-center text-xs text-muted-foreground">
             © 2026 - Fenox Tecnologia. Todos os direitos reservados.
-            Aloha @
+            Aloha
+        </div>
+        <div>
+          <h4 className="font-semibold mb-4">Contato</h4>
+          <p className="text-sm text-muted-foreground">CNPJ: 00.000.000/0001-00</p>
+          <p className="text-sm text-muted-foreground">suporte@fenox.com.br</p>
         </div>
       </div>
     </div>
