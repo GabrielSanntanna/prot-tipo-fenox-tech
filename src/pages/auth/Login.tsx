@@ -168,6 +168,8 @@ export default function Login() {
           <p className="text-sm text-muted-foreground">CNPJ: 00.000.000/0001-00</p>
           <p className="text-sm text-muted-foreground">suporte@fenox.com.br</p>
         </div>
+        <h1>Chama</h1>
+        
       </div>
     </div>
   );
